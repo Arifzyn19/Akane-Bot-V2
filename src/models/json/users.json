@@ -1,0 +1,14 @@
+{
+  "6285691464024@s.whatsapp.net": {
+    "jid": "6285691464024@s.whatsapp.net",
+    "name": "",
+    "permissions": [
+      "user"
+    ],
+    "cooldowns": {
+      "ping": "2025-09-07T14:22:28.377Z"
+    },
+    "createdAt": "2025-09-07T12:58:58.444Z",
+    "updatedAt": "2025-09-07T14:22:28.379Z"
+  }
+}

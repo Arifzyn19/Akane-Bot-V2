@@ -1,0 +1,589 @@
+import { ENV } from "../config/env.js";
+import Function from "./function.js";
+import fs from "fs";
+import path from "path";
+import util from "util";
+import chalk from "chalk";
+import Crypto from "crypto";
+import baileys from "@whiskeysockets/baileys";
+import { parsePhoneNumber } from "libphonenumber-js";
+import { fileTypeFromBuffer } from "file-type";
+import { fileURLToPath } from "url";
+
+const {
+  generateWAMessage,
+  generateWAMessageFromContent,
+  proto,
+  prepareWAMessageMedia,
+  jidNormalizedUser,
+  WA_DEFAULT_EPHEMERAL,
+  extractMessageContent,
+  areJidsSameUser,
+} = baileys;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function toSHA256(str) {
+  return Crypto.createHash("sha256").update(str).digest("hex");
+}
+
+function isNumber() {
+  const int = parseInt(this);
+  return typeof int === "number" && !isNaN(int);
+}
+
+function getRandom() {
+  if (Array.isArray(this) || this instanceof String)
+    return this[Math.floor(Math.random() * this.length)];
+  return Math.floor(Math.random() * this);
+}
+
+function jidDecode(jid) {
+  const sepIdx = typeof jid === "string" ? jid.indexOf("@") : -1;
+  if (sepIdx < 0) {
+    return undefined;
+  }
+  const server = jid.slice(sepIdx + 1);
+  const userCombined = jid.slice(0, sepIdx);
+  const [userAgent, device] = userCombined.split(":");
+  const user = userAgent.split("_")[0];
+  return {
+    server: server,
+    user,
+    domainType: server === "lid" ? 1 : 0,
+    device: device ? +device : undefined,
+  };
+}
+
+export function Client({ client: conn, store }) {
+  delete store.groupMetadata;
+  for (let v in store) {
+    conn[v] = store[v];
+  }
+
+  const client = Object.defineProperties(conn, {
+    logger: {
+      get() {
+        return {
+          info(...args) {
+            console.log(
+              chalk.bold.bgRgb(51, 204, 51)("INFO "),
+              chalk.cyan(util.format(...args)),
+            );
+          },
+          error(...args) {
+            console.log(
+              chalk.bold.bgRgb(247, 38, 33)("ERROR "),
+              chalk.rgb(255, 38, 0)(util.format(...args)),
+            );
+          },
+          warn(...args) {
+            console.log(
+              chalk.bold.bgRgb(255, 153, 0)("WARNING "),
+              chalk.redBright(util.format(...args)),
+            );
+          },
+          trace(...args) {
+            console.log(
+              chalk.grey("TRACE "),
+              chalk.white(util.format(...args)),
+            );
+          },
+          debug(...args) {
+            console.log(
+              chalk.bold.bgRgb(66, 167, 245)("DEBUG "),
+              chalk.white(util.format(...args)),
+            );
+          },
+        };
+      },
+      enumerable: true,
+    },
+
+    getContentType: {
+      value(content) {
+        if (content) {
+          const keys = Object.keys(content);
+          const key = keys.find(
+            (k) =>
+              (k === "conversation" ||
+                k.endsWith("Message") ||
+                k.endsWith("V2") ||
+                k.endsWith("V3")) &&
+              k !== "senderKeyDistributionMessage",
+          );
+          return key;
+        }
+      },
+      enumerable: true,
+    },
+
+    decodeJid: {
+      async value(jid) {
+        if (!jid || typeof jid !== "string")
+          return (!nullish(jid) && jid) || null;
+        // @ts-ignore
+        return jid?.decodeJid?.();
+      },
+    },
+
+    generateMessageID: {
+      value(id = "3EB0", length = 18) {
+        return id + Crypto.randomBytes(length).toString("hex").toUpperCase();
+      },
+    },
+
+    getName: {
+      value(jid) {
+        let id = conn.decodeJid(jid),
+          v;
+        if (id?.endsWith("@g.us")) {
+          return new Promise(async (resolve) => {
+            v = (await store.fetchGroupMetadata(jid, conn)) || {};
+            resolve(v.name || v.subject || id.replace("@g.us", ""));
+          });
+        } else {
+          v =
+            id === "0@s.whatsapp.net"
+              ? { id, name: "WhatsApp" }
+              : id === conn.decodeJid(conn?.user?.id)
+                ? conn.user
+                : store.contacts?.[id] || {};
+        }
+        return (
+          v?.name ||
+          v?.subject ||
+          v?.pushName ||
+          v?.notify ||
+          v?.verifiedName ||
+          parsePhoneNumber("+" + id.replace("@s.whatsapp.net", "")).format(
+            "INTERNATIONAL",
+          )
+        );
+      },
+    },
+
+    sendContact: {
+      async value(jid, number, quoted, options = {}) {
+        let list = [];
+        for (let v of number) {
+          list.push({
+            displayName: await conn.getName(v),
+            vcard: `BEGIN:VCARD\nVERSION:3.0\nN:${await conn.getName(v + "@s.whatsapp.net")}\nFN:${await conn.getName(v + "@s.whatsapp.net")}\nitem1.TEL;waid=${v}:${v}\nitem1.X-ABLabel:Ponsel\nitem2.EMAIL;type=INTERNET:bot@whatsapp.com\nitem2.X-ABLabel:Email\nEND:VCARD`,
+          });
+        }
+        return conn.sendMessage(
+          jid,
+          {
+            contacts: {
+              displayName: `${list.length} Contact`,
+              contacts: list,
+            },
+            mentions: quoted?.participant
+              ? [conn.decodeJid(quoted?.participant)]
+              : [conn.decodeJid(conn.user?.id)],
+            ...options,
+          },
+          { quoted, ...options },
+        );
+      },
+      enumerable: true,
+    },
+
+    parseMention: {
+      value(text) {
+        return (
+          [...text.matchAll(/@([0-9]{5,16}|0)/g)].map(
+            (v) => v[1] + "@s.whatsapp.net",
+          ) || []
+        );
+      },
+    },
+
+    downloadMediaMessage: {
+      async value(message, filename) {
+        let mime = {
+          imageMessage: "image",
+          videoMessage: "video",
+          stickerMessage: "sticker",
+          documentMessage: "document",
+          audioMessage: "audio",
+          ptvMessage: "video",
+        }[message.type];
+
+        if ("thumbnailDirectPath" in message.msg && !("url" in message.msg)) {
+          message = {
+            directPath: message.msg.thumbnailDirectPath,
+            mediaKey: message.msg.mediaKey,
+          };
+          mime = "thumbnail-link";
+        } else {
+          message = message.msg;
+        }
+        return await baileys.toBuffer(
+          await baileys.downloadContentFromMessage(message, mime),
+        );
+      },
+      enumerable: true,
+    },
+
+    getFile: {
+      async value(PATH, saveToFile = false) {
+        return await Function.getFile(PATH, saveToFile);
+      },
+      enumerable: true,
+    },
+
+    sendMedia: {
+      async value(jid, url, quoted = "", options = {}) {
+        let { mime, data: buffer, ext, size } = await Function.getFile(url);
+        mime = options?.mimetype ? options.mimetype : mime;
+        let data = { text: "" },
+          mimetype = /audio/i.test(mime) ? "audio/mpeg" : mime;
+
+        if (size > 45000000)
+          data = {
+            document: buffer,
+            mimetype: mime,
+            fileName: options?.fileName
+              ? options.fileName
+              : `${conn.user?.name} (${new Date()}).${ext}`,
+            ...options,
+          };
+        else if (options.asDocument)
+          data = {
+            document: buffer,
+            mimetype: mime,
+            fileName: options?.fileName
+              ? options.fileName
+              : `${conn.user?.name} (${new Date()}).${ext}`,
+            ...options,
+          };
+        else if (/image/.test(mime))
+          data = {
+            image: buffer,
+            mimetype: options?.mimetype ? options.mimetype : "image/png",
+            ...options,
+          };
+        else if (/video/.test(mime))
+          data = {
+            video: buffer,
+            mimetype: options?.mimetype ? options.mimetype : "video/mp4",
+            ...options,
+          };
+        else if (/audio/.test(mime))
+          data = {
+            audio: buffer,
+            mimetype: options?.mimetype ? options.mimetype : "audio/mpeg",
+            ...options,
+          };
+        else
+          data = {
+            document: buffer,
+            mimetype: mime,
+            ...options,
+          };
+
+        return await conn.sendMessage(jid, data, {
+          quoted,
+          ...options,
+        });
+      },
+      enumerable: true,
+    },
+
+    sendPoll: {
+      async value(chatId, name, values, options = {}) {
+        let selectableCount = options?.selectableCount
+          ? options.selectableCount
+          : 1;
+        return await conn.sendMessage(
+          chatId,
+          {
+            poll: {
+              name,
+              values,
+              selectableCount,
+            },
+            ...options,
+          },
+          { ...options },
+        );
+      },
+      enumerable: true,
+    },
+
+    reply: {
+      value(jid, text = "", quoted, options = {}) {
+        return conn.sendMessage(
+          jid,
+          {
+            text,
+            mentions: conn.parseMention(text),
+            ...options,
+          },
+          { quoted, ...options },
+        );
+      },
+    },
+
+    sendReact: {
+      async value(jid, text, key) {
+        return conn.sendMessage(jid, { react: { text: text, key: key } });
+      },
+    },
+
+    msToTime: {
+      value(ms) {
+        let h = isNaN(ms) ? "--" : Math.floor(ms / 3600000);
+        let m = isNaN(ms) ? "--" : Math.floor(ms / 60000) % 60;
+        let s = isNaN(ms) ? "--" : Math.floor(ms / 1000) % 60;
+        return [h + " Hours ", m + " Minutes ", s + " Second"]
+          .map((v) => v.toString().padStart(2, 0))
+          .join(" ");
+      },
+      enumerable: true,
+    },
+
+    clockString: {
+      value(ms) {
+        let h = isNaN(ms) ? "--" : Math.floor(ms / 3600000);
+        let m = isNaN(ms) ? "--" : Math.floor(ms / 60000) % 60;
+        let s = isNaN(ms) ? "--" : Math.floor(ms / 1000) % 60;
+        return [h + " Jam ", m + " Menit ", s + " Detik"]
+          .map((v) => v.toString().padStart(2, 0))
+          .join(" ");
+      },
+      enumerable: true,
+    },
+  });
+
+  if (conn.user?.id) conn.user.jid = conn.decodeJid(conn.user?.id);
+  return conn;
+}
+
+export function Serialize(conn, msg, store) {
+  const m = {};
+  const botNumber = conn.decodeJid(conn.user?.id);
+
+  if (!msg.message) return;
+  if (msg.key && msg.key.remoteJid == "status@broadcast") return;
+
+  m.message = extractMessageContent(msg.message);
+
+  if (msg.key) {
+    m.key = msg.key;
+    m.chat = m.key.remoteJid.startsWith("status")
+      ? jidNormalizedUser(m.key.participant)
+      : jidNormalizedUser(m.key.remoteJid);
+    m.fromMe = m.key.fromMe;
+    m.id = m.key.id;
+    m.isBaileys =
+      (m.id?.startsWith("3EB0") && m.id?.length === 22) ||
+      m.id?.length === 16 ||
+      false;
+    m.isGroup = m.chat.endsWith("@g.us");
+    m.participant = !m.isGroup ? false : m.key.participant;
+    m.sender = conn.decodeJid(
+      m.fromMe ? conn.user.id : m.isGroup ? m.participant : m.chat,
+    );
+  }
+
+  m.pushName = msg.pushName;
+
+  // Check if user is owner/admin based on ENV config
+  m.isOwner =
+    m.sender &&
+    ENV.OWNER_NUMBER &&
+    m.sender.replace(/\D+/g, "") === ENV.OWNER_NUMBER;
+  m.isAdmin =
+    m.sender && ENV.ADMIN_NUMBERS.includes(m.sender.replace(/\D+/g, ""));
+
+  if (m.isGroup) {
+    m.metadata = store.groupMetadata?.[m.chat] || {};
+    m.admins =
+      m.metadata.participants?.reduce(
+        (memberAdmin, memberNow) =>
+          (memberNow.admin
+            ? memberAdmin.push({ id: memberNow.id, admin: memberNow.admin })
+            : [...memberAdmin]) && memberAdmin,
+        [],
+      ) || [];
+    m.isGroupAdmin = !!m.admins.find((member) => member.id === m.sender);
+    m.isBotAdmin = !!m.admins.find((member) => member.id === botNumber);
+  }
+
+  if (m.message) {
+    m.type = conn.getContentType(m.message) || Object.keys(m.message)[0];
+    m.msg = extractMessageContent(m.message[m.type]) || m.message[m.type];
+    m.mentions = m.msg?.contextInfo?.mentionedJid || [];
+    m.body =
+      m.msg?.text ||
+      m.msg?.conversation ||
+      m.msg?.caption ||
+      m.message?.conversation ||
+      m.msg?.selectedButtonId ||
+      m.msg?.singleSelectReply?.selectedRowId ||
+      m.msg?.selectedId ||
+      m.msg?.contentText ||
+      m.msg?.selectedDisplayText ||
+      m.msg?.title ||
+      m.msg?.name ||
+      "";
+
+    // Prefix detection
+    m.prefix = /^[°•π÷×¶∆£¢€¥®™+✓_|~!?@#%^&.©^]/gi.test(m.body)
+      ? m.body.match(/^[°•π÷×¶∆£¢€¥®™+✓_|~!?@#%^&.©^]/gi)[0]
+      : ENV.PREFIX;
+
+    m.command =
+      m.body && m.body.replace(m.prefix, "").trim().split(/ +/).shift();
+    m.args =
+      m.body
+        .trim()
+        .replace(new RegExp("^" + Function.escapeRegExp(m.prefix), "i"), "")
+        .replace(m.command, "")
+        .split(/ +/)
+        .filter((a) => a) || [];
+    m.text = m.args.join(" ");
+
+    m.isMedia = !!m.msg?.mimetype || !!m.msg?.thumbnailDirectPath;
+    if (m.isMedia) {
+      m.mime = m.msg?.mimetype;
+      m.size = m.msg?.fileLength;
+      m.height = m.msg?.height || "";
+      m.width = m.msg?.width || "";
+      if (/webp/i.test(m.mime)) {
+        m.isAnimated = m.msg?.isAnimated;
+      }
+    }
+
+    m.reply = async (text, options = {}) => {
+      return conn.sendMessage(
+        m.chat,
+        { text, ...options },
+        { quoted: m, ...options },
+      );
+    };
+
+    m.react = (emoji) =>
+      conn.sendMessage(m.chat, {
+        react: {
+          text: String(emoji),
+          key: m.key,
+        },
+      });
+
+    m.download = (filepath) => {
+      if (filepath) return conn.downloadMediaMessage(m, filepath);
+      else return conn.downloadMediaMessage(m);
+    };
+  }
+
+  // Handle quoted messages
+  m.isQuoted = false;
+  if (m.msg?.contextInfo?.quotedMessage) {
+    m.isQuoted = true;
+    m.quoted = {};
+    m.quoted.message = extractMessageContent(m.msg?.contextInfo?.quotedMessage);
+
+    if (m.quoted.message) {
+      m.quoted.type =
+        conn.getContentType(m.quoted.message) ||
+        Object.keys(m.quoted.message)[0];
+      m.quoted.msg =
+        extractMessageContent(m.quoted.message[m.quoted.type]) ||
+        m.quoted.message[m.quoted.type];
+      m.quoted.key = {
+        remoteJid: m.msg?.contextInfo?.remoteJid || m.chat,
+        participant: m.msg?.contextInfo?.remoteJid?.endsWith("g.us")
+          ? conn.decodeJid(m.msg?.contextInfo?.participant)
+          : false,
+        fromMe: areJidsSameUser(
+          conn.decodeJid(m.msg?.contextInfo?.participant),
+          conn.decodeJid(conn.user?.id),
+        ),
+        id: m.msg?.contextInfo?.stanzaId,
+      };
+
+      m.quoted.body =
+        m.quoted.msg?.text ||
+        m.quoted.msg?.caption ||
+        m.quoted?.message?.conversation ||
+        m.quoted.msg?.selectedButtonId ||
+        "";
+
+      m.quoted.isMedia =
+        !!m.quoted.msg?.mimetype || !!m.quoted.msg?.thumbnailDirectPath;
+
+      m.quoted.reply = (text, options = {}) => {
+        return m.reply(text, { quoted: m.quoted, ...options });
+      };
+
+      m.quoted.download = (filepath) => {
+        if (filepath) return conn.downloadMediaMessage(m.quoted, filepath);
+        else return conn.downloadMediaMessage(m.quoted);
+      };
+    }
+  }
+
+  return m;
+}
+
+export function protoType() {
+  Buffer.prototype.toArrayBuffer = function toArrayBufferV2() {
+    const ab = new ArrayBuffer(this.length);
+    const view = new Uint8Array(ab);
+    for (let i = 0; i < this.length; ++i) {
+      view[i] = this[i];
+    }
+    return ab;
+  };
+
+  ArrayBuffer.prototype.toBuffer = function toBuffer() {
+    return Buffer.from(new Uint8Array(this));
+  };
+
+  String.prototype.isNumber = Number.prototype.isNumber = isNumber;
+  String.prototype.capitalize = function capitalize() {
+    return this.charAt(0).toUpperCase() + this.slice(1, this.length);
+  };
+
+  String.prototype.decodeJid = function decodeJid() {
+    if (/:\d+@/gi.test(this)) {
+      const decode = jidDecode(this) || {};
+      return (
+        (decode.user && decode.server && decode.user + "@" + decode.server) ||
+        this
+      ).trim();
+    } else return this.trim();
+  };
+
+  Number.prototype.toTimeString = function toTimeString() {
+    const seconds = Math.floor((this / 1000) % 60);
+    const minutes = Math.floor((this / (60 * 1000)) % 60);
+    const hours = Math.floor((this / (60 * 60 * 1000)) % 24);
+    const days = Math.floor(this / (24 * 60 * 60 * 1000));
+    return (
+      (days ? `${days} day(s) ` : "") +
+      (hours ? `${hours} hour(s) ` : "") +
+      (minutes ? `${minutes} minute(s) ` : "") +
+      (seconds ? `${seconds} second(s)` : "")
+    ).trim();
+  };
+
+  Number.prototype.getRandom =
+    String.prototype.getRandom =
+    Array.prototype.getRandom =
+      getRandom;
+}
+
+function nullish(args) {
+  return !(args !== null && args !== undefined);
+}
+
+export default {
+  Client,
+  protoType,
+  Serialize,
+};
