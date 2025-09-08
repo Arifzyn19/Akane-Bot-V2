@@ -1,25 +1,26 @@
 export default {
   name: "ping",
   description: "Check bot response time",
+  command: ["ping"],
   usage: "!ping",
   category: "general",
   aliases: ["p"],
-  permissions: ["user"],
-  cooldown: 3,
+  permissions: "all",
+  //cooldown: 3,
 
-  execute: async (sock, { msg }) => {
+  execute: async (sock, { m }) => {
     const start = Date.now();
 
-    const sentMsg = await sock.sendMessage(msg.key.remoteJid, {
+    const sentMsg = await sock.sendMessage(m.chat, {
       text: "🏓 Pinging...",
     });
 
     const end = Date.now();
     const latency = end - start;
 
-    // Edit the message with ping result
-    await sock.sendMessage(msg.key.remoteJid, {
+    await sock.sendMessage(m.chat, {
       text: `🏓 *Pong!*\n⚡ Latency: ${latency}ms`,
+      edit: sentMsg.key,  
     });
   },
 };

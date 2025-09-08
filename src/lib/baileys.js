@@ -1,4 +1,4 @@
-import makeWASocket, {
+import baileys, {
   DisconnectReason,
   useMultiFileAuthState,
   makeCacheableSignalKeyStore,
@@ -49,7 +49,7 @@ export class BaileysClient {
         "./" + this.sessionPath,
       );
 
-      this.sock = makeWASocket({
+      this.sock = baileys.default({
         logger: this.logger.child({ level: "silent" }),
         browser: Browsers.ubuntu("Linux"),
         printQRInTerminal: ENV.PRINT_QR || false,
@@ -259,7 +259,7 @@ export class BaileysClient {
       const msg = m.messages?.[0];
       if (!msg || !msg.message) return;
 
-      const { MessageHandler } = await import("../services/messageHandler.js");
+      const { MessageHandler } = await import("../handlers/message.js");
       const handler = new MessageHandler(this.sock);
 
       await handler.handle(msg);

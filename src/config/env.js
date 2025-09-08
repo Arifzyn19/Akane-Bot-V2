@@ -21,4 +21,9 @@ export const ENV = {
 
   // Logging
   LOG_LEVEL: process.env.LOG_LEVEL || "info",
+
+  // Commands
+  COMMANDS_DIR: process.env.COMMANDS_DIR || 'commands'
 };
+
+export default ENV;

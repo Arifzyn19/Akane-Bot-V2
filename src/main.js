@@ -1,5 +1,5 @@
 import { BaileysClient } from "./lib/baileys.js";
-import { commandLoader } from "./lib/commands.js";
+import { loadPluginFiles, pluginFolder, pluginFilter } from "./lib/plugin.js";
 import { db } from "./config/db.js";
 import { ENV } from "./config/env.js";
 import gradient from "gradient-string";
@@ -34,10 +34,20 @@ export class WhatsAppBot {
       
       await db.connect();
       
-      await commandLoader.loadCommands();
-      
       this.client = new BaileysClient();
       await this.client.initialize();
+      
+       try {
+    await loadPluginFiles(pluginFolder, pluginFilter, {
+      logger: this.client.sock.logger,
+      recursiveRead: true,
+    })
+      .then(() => console.log(chalk.cyan('✓'), chalk.green('Plugins Loader Success!')))
+      .catch(console.error)
+  } catch (error) {
+    console.log(chalk.red('✗'), chalk.red('Error:', error.message))
+  }
+
       
       console.log(gradient.morning("✅ Bot started successfully!"));
     } catch (error) {
@@ -52,9 +62,7 @@ export class WhatsAppBot {
     if (this.client) {
       await this.client.disconnect();
     }
-
-    await commandLoader.reloadCommands();
-
+    
     this.client = new BaileysClient();
     await this.client.initialize();
 

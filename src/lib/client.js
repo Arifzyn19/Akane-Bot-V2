@@ -119,7 +119,7 @@ export function Client({ client: conn, store }) {
     },
 
     decodeJid: {
-      async value(jid) {
+     value(jid) {
         if (!jid || typeof jid !== "string")
           return (!nullish(jid) && jid) || null;
         // @ts-ignore
@@ -391,7 +391,6 @@ export function Serialize(conn, msg, store) {
 
   m.pushName = msg.pushName;
 
-  // Check if user is owner/admin based on ENV config
   m.isOwner =
     m.sender &&
     ENV.OWNER_NUMBER &&
