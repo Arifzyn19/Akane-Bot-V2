@@ -1,26 +1,28 @@
+import os from "os";
+import { performance } from "perf_hooks";
+
 export default {
   name: "ping",
-  description: "Check bot response time",
-  command: ["ping"],
-  usage: "!ping",
-  category: "general",
-  aliases: ["p"],
+  description: "Show latency and host info",
+  command: ["ping", "p"],
   permissions: "all",
-  //cooldown: 3,
+  category: "info",
+  cooldown: 3,
 
-  execute: async (sock, { m }) => {
-    const start = Date.now();
-
-    const sentMsg = await sock.sendMessage(m.chat, {
-      text: "🏓 Pinging...",
-    });
-
-    const end = Date.now();
-    const latency = end - start;
-
-    await sock.sendMessage(m.chat, {
-      text: `🏓 *Pong!*\n⚡ Latency: ${latency}ms`,
-      edit: sentMsg.key,  
-    });
-  },
+  async execute(m) {
+    const t0 = performance.now();
+    const total = (os.totalmem() / 1024 ** 3).toFixed(2);
+    const free = (os.freemem() / 1024 ** 3).toFixed(2);
+    const used = (total - free).toFixed(2);
+    
+    await m.reply(
+      `🏓 *PONG!*\n\n` +
+      `⚡ Latency: ${(performance.now() - t0).toFixed(2)}ms\n` +
+      `💻 CPU: ${os.cpus().length} cores\n` +
+      `🧠 RAM: ${used} / ${total} GB\n` +
+      `📊 Free: ${free} GB\n` +
+      `🖥️ Platform: ${os.platform()}\n` +
+      `⏰ Uptime: ${process.uptime().toFixed(0)}s`
+    );
+  }
 };

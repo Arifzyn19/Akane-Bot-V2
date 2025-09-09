@@ -3,23 +3,18 @@ import util from 'util';
 export default {
   name: "eval",
   description: "Execute JavaScript code (Owner only)",
-  usage: "!eval <code>",
-  category: "owner", 
-  aliases: ["ev", "js"],
-  permissions: ["owner"],
+  command: ["eval", "ev", "js"],
+  permissions: "owner",
+  category: "owner",
   cooldown: 0,
 
-  execute: async (sock, { msg, args, user, bot, config }) => {
-    if (!args.length) {
-      return msg.reply("❌ Please provide code to execute!");
+  async execute(m, { text, sock }) {
+    if (!text) {
+      return m.reply("❌ Please provide code to execute!");
     }
 
-    const code = args.join(' ');
-    
     try {
-      await msg.react('⏳');
-      
-      let result = eval(code);
+      let result = eval(text);
       
       if (result instanceof Promise) {
         result = await result;
@@ -31,13 +26,11 @@ export default {
         maxStringLength: 1000
       });
       
-      let response = `📤 *Input:*\n\`\`\`javascript\n${code}\n\`\`\`\n\n`;
+      let response = `📤 *Input:*\n\`\`\`javascript\n${text}\n\`\`\`\n\n`;
       response += `📥 *Output:*\n\`\`\`javascript\n${output}\n\`\`\`\n\n`;
-      response += `📊 *Type:* ${typeof result}\n`;
-      response += `⏱️ *Time:* ${Date.now() - msg.timestamp}ms`;
+      response += `📊 *Type:* ${typeof result}`;
       
-      await msg.reply(response);
-      await msg.react('✅');
+      await m.reply(response);
       
     } catch (error) {
       const errorOutput = util.inspect(error, {
@@ -45,11 +38,10 @@ export default {
         colors: false
       });
       
-      let response = `📤 *Input:*\n\`\`\`javascript\n${code}\n\`\`\`\n\n`;
+      let response = `📤 *Input:*\n\`\`\`javascript\n${text}\n\`\`\`\n\n`;
       response += `❌ *Error:*\n\`\`\`javascript\n${errorOutput}\n\`\`\``;
       
-      await msg.reply(response);
-      await msg.react('❌');
+      await m.reply(response);
     }
   }
-};  
+};

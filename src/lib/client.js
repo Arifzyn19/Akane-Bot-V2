@@ -391,12 +391,9 @@ export function Serialize(conn, msg, store) {
 
   m.pushName = msg.pushName;
 
-  m.isOwner =
-    m.sender &&
-    ENV.OWNER_NUMBER &&
-    m.sender.replace(/\D+/g, "") === ENV.OWNER_NUMBER;
-  m.isAdmin =
-    m.sender && ENV.ADMIN_NUMBERS.includes(m.sender.replace(/\D+/g, ""));
+  const userNumber = m.sender.replace(/\D+/g, '');
+  m.isOwner = ENV.OWNER_NUMBERS.includes(userNumber);
+  m.isAdmin = ENV.OWNER_NUMBERS.includes(userNumber) || ENV.ADMIN_NUMBERS.includes(userNumber);
 
   if (m.isGroup) {
     m.metadata = store.groupMetadata?.[m.chat] || {};

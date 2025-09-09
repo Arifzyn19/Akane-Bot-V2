@@ -10,6 +10,10 @@ export class MessageHandler {
     this.sock = sock;
   }
 
+  /** 
+   * Handle incoming message
+   * @param {object} msg - Incoming message object from Baileys
+   */
   async handle(msg) {
     try {
       const m = Serialize(this.sock, msg, this.sock.store);
@@ -18,69 +22,102 @@ export class MessageHandler {
       if (m.fromMe) return; 
       if (m.isBaileys) return; 
 
-      console.log(chalk.gray('📨'), chalk.greenBright('Message received from'), chalk.cyan(m.pushName || m.sender), chalk.greenBright('in'), chalk.cyan(m.isGroup ? m.groupName : 'Private Chat'));
+      console.log(chalk.gray('📨'), chalk.greenBright('Message received from'), chalk.cyan(m.pushName || m.sender), chalk.greenBright('in'), chalk.cyan(m.isGroup ? m.groupName || 'Group Chat' : 'Private Chat'));
    
       for (const pluginName in plugins) {
         const plugin = plugins[pluginName];
         if (!plugin || !plugin.command || !plugin.execute) continue;
 
+        // Check if message matches plugin conditions
+        if (plugin.group === true && !m.isGroup) continue;
+        if (plugin.private === true && m.isGroup) continue;
+
         if (m.prefix) {
-          const isCommand = (m.prefix && m.body.startsWith(m.prefix)) || false
-          const command = isCommand ? m.command.toLowerCase() : false
+          const isCommand = (m.prefix && m.body.startsWith(m.prefix)) || false;
+          const command = isCommand ? m.command.toLowerCase() : false;
 
           const isAccept = Array.isArray(plugin.command)
             ? plugin.command.includes(command)
-            : plugin.command === command
-          if (!isAccept) continue
+            : plugin.command === command;
+          if (!isAccept) continue;
 
-          m.plugin = plugin
-          m.isCommand = isCommand
+          m.plugin = plugin;
+          m.isCommand = isCommand;
 
-          //  debug log
-          console.log(chalk.gray('🔍'), chalk.blueBright('Command detected:'), chalk.cyan(command), chalk.blueBright('from'), chalk.cyan(m.pushName || m.sender));
-          
-          // User management
           const user = await storage.getUser(m.sender);
-          if (!user) {
-            await storage.createUser(m.sender);
-          }
-  
-          if (plugin.permissions && plugin.permissions !== 'all') {
-            const userPerms = user.permissions || [];
-            const requiredPerms = Array.isArray(plugin.permissions)
-              ? plugin.permissions
-              : [plugin.permissions];
 
-            const hasPermission = requiredPerms.every(perm => userPerms.includes(perm));
-            if (!hasPermission) {
-              await this.sock.sendMessage(m.chat, { text: "❌ You don't have permission to use this command." });
-              return;
-            }
+          // Permission checking with new system
+          if (!this.hasPermission(plugin.permissions, m.sender, user)) {
+            await m.reply("❌ You don't have permission to use this command.");
+            return;
           }
           
-          /*
-          if (plugin.cooldown) {
-            const onCooldown = checkCooldown(user.cooldowns, plugin.name, plugin.cooldown);
-            if (onCooldown) {
-              await this.sock.sendMessage(m.chat, { text: `⏳ Please wait before using the *${plugin.name}* command again.` });
+          // Cooldown check
+          if (plugin.cooldown && plugin.cooldown > 0) {
+            const cooldownResult = checkCooldown(user.cooldowns, plugin.name, plugin.cooldown);
+            if (!cooldownResult.canUse) {
+              await m.reply(`⏳ Please wait ${cooldownResult.remaining} seconds before using the *${plugin.name}* command again.`);
               return;
             }
           }
-          */
 
-          const opts = {
-            args: m.args,
-            text: m.text,
-            prefix: m.prefix,
-          };
+          // Execute plugin
+          try {
+            await plugin.execute(m, {
+              args: m.args,
+              text: m.text,
+              prefix: m.prefix,
+              sock: this.sock,
+              user,
+              isOwner: m.isOwner,
+              isAdmin: m.isAdmin,
+              isGroup: m.isGroup
+            });
 
-          console.log(chalk.gray('⚙️'), chalk.yellow('Executing plugin:'), chalk.cyan(plugin.name), chalk.yellow('for user'), chalk.cyan(m.pushName || m.sender));
-
-          await plugin.execute(this.sock, { m, ...opts });
+            // Set cooldown after successful execution
+            if (plugin.cooldown && plugin.cooldown > 0) {
+              setCooldown(user.cooldowns, plugin.name);
+              await storage.saveUser(m.sender, user);
+            }
+          } catch (error) {
+            console.error(chalk.red('❌ Plugin execution error:'), error);
+            await m.reply(`❌ Error executing command: ${error.message}`);
+          }
         }
       }
     } catch (error) {
       console.error('❌ Error in message handler:', error);
     }
+  }
+
+  /**
+   * Check if user has permission to use plugin
+   * @param {string|array} requiredPermissions - Required permissions
+   * @param {string} sender - User JID
+   * @param {object} user - User data
+   * @returns {boolean}
+   */
+  hasPermission(requiredPermissions, sender, user) {
+    // If permissions is "all", everyone can use
+    if (requiredPermissions === 'all') return true;
+
+    const userNumber = sender.replace('@s.whatsapp.net', '');
+    
+    // Check owner permission (support multiple owners)
+    if (requiredPermissions === 'owner') {
+      return ENV.OWNER_NUMBERS.includes(userNumber);
+    }
+    
+    // Check admin permission (includes all owners)
+    if (requiredPermissions === 'admin') {
+      return ENV.OWNER_NUMBERS.includes(userNumber) || ENV.ADMIN_NUMBERS.includes(userNumber);
+    }
+
+    // For array permissions, check if user has any of them
+    if (Array.isArray(requiredPermissions)) {
+      return requiredPermissions.some(perm => this.hasPermission(perm, sender, user));
+    }
+
+    return false;
   }
 }
