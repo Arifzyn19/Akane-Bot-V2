@@ -1,6 +1,6 @@
 import { BaileysClient } from "./lib/baileys.js";
 import { loadPluginFiles, pluginFolder, pluginFilter } from "./lib/plugin.js";
-import { db } from "./config/db.js";
+import { loadDatabase } from "./lib/database.js";
 import { ENV } from "./config/env.js";
 import gradient from "gradient-string";
 import chalk from "chalk";
@@ -21,7 +21,7 @@ export class WhatsAppBot {
           `🔄 Auto Reconnect: ${ENV.AUTO_RECONNECT ? "Enabled" : "Disabled"}`,
         ),
       );
-      
+
       if (ENV.USE_PAIRING_CODE) {
         console.log(
           chalk.magenta(
@@ -31,38 +31,42 @@ export class WhatsAppBot {
       } else {
         console.log(chalk.magenta(`📱 Connection Method: QR Code`));
       }
-      
-      await db.connect();
-      
+
+      await loadDatabase();
+
       this.client = new BaileysClient();
       await this.client.initialize();
-      
-       try {
-    await loadPluginFiles(pluginFolder, pluginFilter, {
-      logger: this.client.sock.logger,
-      recursiveRead: true,
-    })
-      .then(() => console.log(chalk.cyan('✓'), chalk.green('Plugins Loader Success!')))
-      .catch(console.error)
-  } catch (error) {
-    console.log(chalk.red('✗'), chalk.red('Error:', error.message))
-  }
 
-      
+      try {
+        await loadPluginFiles(pluginFolder, pluginFilter, {
+          logger: this.client.sock.logger,
+          recursiveRead: true,
+        })
+          .then(() =>
+            console.log(
+              chalk.cyan("✓"),
+              chalk.green("Plugins Loader Success!"),
+            ),
+          )
+          .catch(console.error);
+      } catch (error) {
+        console.log(chalk.red("✗"), chalk.red("Error:", error.message));
+      }
+
       console.log(gradient.morning("✅ Bot started successfully!"));
     } catch (error) {
       console.error("❌ Failed to start bot:", error);
       process.exit(1);
     }
   }
-  
+
   async restart() {
     console.log("🔄 Restarting bot...");
 
     if (this.client) {
       await this.client.disconnect();
     }
-    
+
     this.client = new BaileysClient();
     await this.client.initialize();
 
@@ -72,5 +76,5 @@ export class WhatsAppBot {
 
 export const bot = new WhatsAppBot();
 
-process.on('uncaughtException', console.error)
-process.on('unhandledRejection', console.error)
+process.on("uncaughtException", console.error);
+process.on("unhandledRejection", console.error);

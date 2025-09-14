@@ -12,7 +12,6 @@ import pino from "pino";
 import gradient from "gradient-string";
 import chalk from "chalk";
 import { ENV } from "../config/env.js";
-import { storage } from "../config/storage.js";
 import { Client, protoType } from "./client.js";
 
 export class BaileysClient {
@@ -51,7 +50,7 @@ export class BaileysClient {
 
       this.sock = baileys.default({
         logger: this.logger.child({ level: "silent" }),
-        browser: Browsers.ubuntu("Linux"),
+        browser: Browsers.ubuntu("Chrome"),
         printQRInTerminal: ENV.PRINT_QR || false,
         auth: {
           creds: state.creds,
@@ -75,15 +74,15 @@ export class BaileysClient {
           return undefined;
         },
       });
-      
+
       if (this.store) {
         this.store.bind(this.sock.ev, {
-          groupMetadata: this.sock.groupMetadata,	
+          groupMetadata: this.sock.groupMetadata,
         });
       }
-      
+
       this.sock = Client({ client: this.sock, store: this.store });
-      
+
       if (
         ENV.USE_PAIRING_CODE &&
         !this.sock.authState.creds.registered &&
@@ -93,7 +92,7 @@ export class BaileysClient {
 
         console.log("phoneNumber :", phoneNumber);
         if (phoneNumber) {
-          this.pairingCodeRequested = true; 
+          this.pairingCodeRequested = true;
 
           setTimeout(async () => {
             try {
@@ -115,7 +114,7 @@ export class BaileysClient {
                 "❌ Failed to request pairing code:",
                 error.message,
               );
-              this.pairingCodeRequested = false; 
+              this.pairingCodeRequested = false;
             }
           }, 3000);
         } else {
@@ -126,7 +125,7 @@ export class BaileysClient {
           );
         }
       }
-      
+
       // Handle connection updates
       this.sock.ev.on("connection.update", async (update) => {
         await this.handleConnectionUpdate(update);
@@ -249,7 +248,7 @@ export class BaileysClient {
     } else if (connection === "open") {
       this.isConnected = true;
       this.qrRetries = 0;
-      this.pairingCodeRequested = false; 
+      this.pairingCodeRequested = false;
       console.log(gradient.morning("✅ Bot connected successfully!"));
     }
   }

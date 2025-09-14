@@ -1,47 +1,41 @@
-import util from 'util';
+import util from "util";
+import path from "path";
+import { fileURLToPath } from "url";
+import { createRequire } from "module";
 
 export default {
   name: "eval",
   description: "Execute JavaScript code (Owner only)",
-  command: ["eval", "ev", "js"],
-  permissions: "owner",
+  command: [">", "ev", "js"],
   category: "owner",
   cooldown: 0,
+  prefix: false,
+  isOwner: true,
 
   async execute(m, { text, sock }) {
     if (!text) {
       return m.reply("❌ Please provide code to execute!");
     }
 
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const require = createRequire(__dirname);
+
+    let _return = "";
+
     try {
-      let result = eval(text);
-      
-      if (result instanceof Promise) {
-        result = await result;
-      }
-      
-      const output = util.inspect(result, {
-        depth: 3,
-        colors: false,
-        maxStringLength: 1000
-      });
-      
-      let response = `📤 *Input:*\n\`\`\`javascript\n${text}\n\`\`\`\n\n`;
-      response += `📥 *Output:*\n\`\`\`javascript\n${output}\n\`\`\`\n\n`;
-      response += `📊 *Type:* ${typeof result}`;
-      
-      await m.reply(response);
-      
+      _return = /await/i.test(text)
+        ? await eval(`(async () => { ${text} })()`)
+        : eval(text);
+
+      Promise.resolve(_return)
+        .then((res) => m.reply(util.format(res)))
+        .catch((err) => m.reply(util.format(err)));
     } catch (error) {
       const errorOutput = util.inspect(error, {
         depth: 2,
-        colors: false
+        colors: false,
       });
-      
-      let response = `📤 *Input:*\n\`\`\`javascript\n${text}\n\`\`\`\n\n`;
-      response += `❌ *Error:*\n\`\`\`javascript\n${errorOutput}\n\`\`\``;
-      
-      await m.reply(response);
+      await m.reply(errorOutput);
     }
-  }
+  },
 };

@@ -1,54 +1,109 @@
-import mongoose from "mongoose";
 import { ENV } from "./env.js";
+import db from "../lib/database.js";
+import baileys from "@whiskeysockets/baileys";
 
-class Database {
-  constructor() {
-    this.isConnected = false;
+const validators = {
+  isNumber: (x) => typeof x === "number" && !isNaN(x),
+  isBoolean: (x) => typeof x === "boolean",
+  isString: (x) => typeof x === "string",
+  isObject: (x) => typeof x === "object" && x !== null,
+  isArray: (x) => Array.isArray(x),
+};
+
+const getDefaultUser = (m) => ({
+  lastChat: new Date(),
+  name: m.pushName || "Unknown",
+  registered: false,
+  age: 0,
+
+  premium: m.isOwner ? true : false,
+  VIP: m.isOwner ? true : false,
+  banned: false,
+  warning: 0,
+  autolevelup: true,
+  premiumTime: 0,
+
+  level: 1,
+  exp: 0,
+  limit: 10,
+
+  afk: -1,
+  afkReason: "",
+
+  cooldowns: {},
+});
+
+const getDefaultGroup = () => ({
+  lastChat: new Date().getTime(),
+  mute: false,
+  welcome: true,
+  leave: true,
+  antilink: false,
+  antispam: false,
+  antibot: false,
+  antitagsw: false,
+  antisticker: false,
+  nsfw: false,
+  game: false,
+  autolevelup: true,
+});
+
+const getDefaultSettings = () => ({
+  firstchat: true,
+  readstory: true,
+  reactstory: false,
+  autoread: false,
+  self: false,
+  owner: ["6285691464024"],
+  ch_id: "120363181344949815@newsletter",
+  ch_name: "Arifzyn Infomation",
+  logo: "",
+  developer: "Arifzyn.",
+  packname: "YouTube : @arifzxa19",
+  api: {},
+});
+
+export function syncDatabase(m, client) {
+  let user = db.data.users[m.sender];
+  if (!validators.isObject(user)) {
+    db.data.users[m.sender] = getDefaultUser(m);
+  } else {
+    const defaultUser = getDefaultUser(m);
+    for (const [key, value] of Object.entries(defaultUser)) {
+      if (!(key in user) || typeof user[key] !== typeof value) {
+        user[key] = value;
+      }
+    }
   }
 
-  async connect() {
-    if (ENV.DB_MODE !== "mongodb") {
-      console.log("📁 Using JSON storage mode");
-      return true;
-    }
-
-    try {
-      await mongoose.connect(ENV.MONGO_URI);
-      this.isConnected = true;
-      console.log("🗄️ MongoDB connected successfully");
-      return true;
-    } catch (error) {
-      console.error("❌ MongoDB connection failed:", error.message);
-      return false;
+  if (m.isGroup) {
+    let group = db.data.groups[m.chat];
+    if (!validators.isObject(group)) {
+      db.data.groups[m.chat] = getDefaultGroup();
+    } else {
+      const defaultGroup = getDefaultGroup();
+      for (const [key, value] of Object.entries(defaultGroup)) {
+        if (!(key in group) || typeof group[key] !== typeof value) {
+          group[key] = value;
+        }
+      }
     }
   }
 
-  async disconnect() {
-    if (ENV.DB_MODE === "mongodb" && this.isConnected) {
-      await mongoose.disconnect();
-      this.isConnected = false;
-      console.log("🗄️ MongoDB disconnected");
+  const botId = client.user?.jid || client.user?.id;
+  if (!botId) return;
+
+  const numberBot = baileys.jidNormalizedUser(botId);
+
+  let settings = db.data.settings[numberBot];
+  if (!validators.isObject(settings)) {
+    db.data.settings[numberBot] = getDefaultSettings();
+  } else {
+    const defaultSettings = getDefaultSettings();
+    for (const [key, value] of Object.entries(defaultSettings)) {
+      if (!(key in settings) || typeof settings[key] !== typeof value) {
+        settings[key] = value;
+      }
     }
   }
 }
-
-// MongoDB Schemas
-const sessionSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-  data: { type: Object, required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-});
-
-const userSchema = new mongoose.Schema({
-  jid: { type: String, required: true, unique: true },
-  name: { type: String, default: "" },
-  permissions: { type: [String], default: ["user"] },
-  cooldowns: { type: Map, of: Date, default: new Map() },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-});
-
-export const Session = mongoose.model("Session", sessionSchema);
-export const User = mongoose.model("User", userSchema);
-export const db = new Database();

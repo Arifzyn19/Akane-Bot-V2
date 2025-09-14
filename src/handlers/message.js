@@ -1,121 +1,234 @@
-import { ENV } from '../config/env.js';
-import { storage } from '../config/storage.js';
-import { plugins } from '../lib/plugin.js';
-import { checkCooldown, setCooldown } from '../lib/utils.js';
-import { Serialize } from '../lib/client.js';
-import chalk from 'chalk';
+import { ENV } from "../config/env.js";
+import { syncDatabase } from "../config/db.js";
+import { plugins } from "../lib/plugin.js";
+import { checkCooldown, setCooldown } from "../lib/utils.js";
+import { Serialize } from "../lib/client.js";
+import db from "../lib/database.js";
+import chalk from "chalk";
 
 export class MessageHandler {
   constructor(sock) {
     this.sock = sock;
   }
 
-  /** 
-   * Handle incoming message
-   * @param {object} msg - Incoming message object from Baileys
-   */
   async handle(msg) {
     try {
       const m = Serialize(this.sock, msg, this.sock.store);
       if (!m) return;
 
-      if (m.fromMe) return; 
-      if (m.isBaileys) return; 
+      if (m.fromMe) return;
+      if (m.isBaileys) return;
 
-      console.log(chalk.gray('📨'), chalk.greenBright('Message received from'), chalk.cyan(m.pushName || m.sender), chalk.greenBright('in'), chalk.cyan(m.isGroup ? m.groupName || 'Group Chat' : 'Private Chat'));
-   
-      for (const pluginName in plugins) {
-        const plugin = plugins[pluginName];
-        if (!plugin || !plugin.command || !plugin.execute) continue;
+      await syncDatabase(m, this.sock);
 
-        // Check if message matches plugin conditions
-        if (plugin.group === true && !m.isGroup) continue;
-        if (plugin.private === true && m.isGroup) continue;
+      console.log(
+        chalk.gray("📨"),
+        chalk.greenBright("Message received from"),
+        chalk.cyan(m.pushName || m.sender),
+        chalk.greenBright("in"),
+        chalk.cyan(m.isGroup ? m.groupName || "Group Chat" : "Private Chat"),
+      );
 
-        if (m.prefix) {
-          const isCommand = (m.prefix && m.body.startsWith(m.prefix)) || false;
-          const command = isCommand ? m.command.toLowerCase() : false;
+      const user = db.data.users[m.sender];
+      const group = db.data.groups[m.chat];
 
-          const isAccept = Array.isArray(plugin.command)
-            ? plugin.command.includes(command)
-            : plugin.command === command;
-          if (!isAccept) continue;
+      const context = {
+        args: m.args,
+        text: m.text,
+        prefix: m.prefix,
+        sock: this.sock,
+        isOwner: m.isOwner,
+        isAdmin: m.isAdmin,
+        isGroup: m.isGroup,
+      };
 
-          m.plugin = plugin;
-          m.isCommand = isCommand;
+      await this.runBeforeHooks(m, context);
 
-          const user = await storage.getUser(m.sender);
+      const executedPlugin = await this.processPlugins(m, context, user, group);
 
-          // Permission checking with new system
-          if (!this.hasPermission(plugin.permissions, m.sender, user)) {
-            await m.reply("❌ You don't have permission to use this command.");
-            return;
-          }
-          
-          // Cooldown check
-          if (plugin.cooldown && plugin.cooldown > 0) {
-            const cooldownResult = checkCooldown(user.cooldowns, plugin.name, plugin.cooldown);
-            if (!cooldownResult.canUse) {
-              await m.reply(`⏳ Please wait ${cooldownResult.remaining} seconds before using the *${plugin.name}* command again.`);
-              return;
-            }
-          }
-
-          // Execute plugin
-          try {
-            await plugin.execute(m, {
-              args: m.args,
-              text: m.text,
-              prefix: m.prefix,
-              sock: this.sock,
-              user,
-              isOwner: m.isOwner,
-              isAdmin: m.isAdmin,
-              isGroup: m.isGroup
-            });
-
-            // Set cooldown after successful execution
-            if (plugin.cooldown && plugin.cooldown > 0) {
-              setCooldown(user.cooldowns, plugin.name);
-              await storage.saveUser(m.sender, user);
-            }
-          } catch (error) {
-            console.error(chalk.red('❌ Plugin execution error:'), error);
-            await m.reply(`❌ Error executing command: ${error.message}`);
-          }
-        }
-      }
+      await this.runAfterHooks(m, context, executedPlugin);
     } catch (error) {
-      console.error('❌ Error in message handler:', error);
+      console.error("❌ Error in message handler:", error);
     }
   }
 
-  /**
-   * Check if user has permission to use plugin
-   * @param {string|array} requiredPermissions - Required permissions
-   * @param {string} sender - User JID
-   * @param {object} user - User data
-   * @returns {boolean}
-   */
-  hasPermission(requiredPermissions, sender, user) {
-    // If permissions is "all", everyone can use
-    if (requiredPermissions === 'all') return true;
+  async runBeforeHooks(m, context) {
+    for (const pluginName in plugins) {
+      const plugin = plugins[pluginName];
+      if (!plugin || !plugin.before) continue;
 
-    const userNumber = sender.replace('@s.whatsapp.net', '');
-    
-    // Check owner permission (support multiple owners)
-    if (requiredPermissions === 'owner') {
-      return ENV.OWNER_NUMBERS.includes(userNumber);
+      try {
+        await plugin.before(m, context);
+      } catch (error) {
+        console.error(
+          chalk.red(`❌ Before hook error (${pluginName}):`),
+          error,
+        );
+      }
     }
-    
-    // Check admin permission (includes all owners)
-    if (requiredPermissions === 'admin') {
-      return ENV.OWNER_NUMBERS.includes(userNumber) || ENV.ADMIN_NUMBERS.includes(userNumber);
+  }
+
+  async runAfterHooks(m, context, executedPlugin) {
+    for (const pluginName in plugins) {
+      const plugin = plugins[pluginName];
+      if (!plugin || !plugin.after) continue;
+
+      try {
+        await plugin.after(m, context, executedPlugin);
+      } catch (error) {
+        console.error(chalk.red(`❌ After hook error (${pluginName}):`), error);
+      }
+    }
+  }
+
+  async processPlugins(m, context, user, group) {
+    let executedPlugin = null;
+
+    for (const pluginName in plugins) {
+      const plugin = plugins[pluginName];
+      if (!plugin || !plugin.execute) continue;
+
+      const pluginMatch = this.checkPluginMatch(plugin, m);
+      if (!pluginMatch.shouldExecute) continue;
+
+      m.plugin = plugin;
+      m.isCommand = pluginMatch.isCommand;
+
+      const conditionError = this.checkPluginConditions(plugin, m, user, group);
+      if (conditionError) {
+        await m.reply(conditionError);
+        continue;
+      }
+
+      if (pluginMatch.isCommand && plugin.cooldown && plugin.cooldown > 0) {
+        const cooldownResult = checkCooldown(
+          user.cooldowns,
+          plugin.name,
+          plugin.cooldown,
+        );
+        if (!cooldownResult.canUse) {
+          await m.reply(
+            `⏳ Please wait ${cooldownResult.remaining} seconds before using the *${plugin.name}* command again.`,
+          );
+          continue;
+        }
+      }
+
+      try {
+        await plugin.execute(m, context);
+
+        executedPlugin = plugin;
+
+        if (pluginMatch.isCommand && plugin.cooldown && plugin.cooldown > 0) {
+          setCooldown(user.cooldowns, plugin.name);
+        }
+
+        if (pluginMatch.isCommand) {
+          break;
+        }
+      } catch (error) {
+        console.error(
+          chalk.red(`❌ Plugin execution error (${plugin.name}):`),
+          error,
+        );
+        if (pluginMatch.isCommand) {
+          await m.reply(`❌ Error executing command: ${error.message}`);
+        }
+      }
     }
 
-    // For array permissions, check if user has any of them
-    if (Array.isArray(requiredPermissions)) {
-      return requiredPermissions.some(perm => this.hasPermission(perm, sender, user));
+    return executedPlugin;
+  }
+
+  checkPluginMatch(plugin, m) {
+    if (!plugin.command) {
+      return {
+        shouldExecute: true,
+        isCommand: false,
+        type: "auto",
+      };
+    }
+
+    const needsPrefix = plugin.prefix !== false;
+
+    if (needsPrefix) {
+      if (!m.prefix) {
+        return {
+          shouldExecute: false,
+          isCommand: false,
+          type: "command",
+        };
+      }
+
+      const isCommand = m.prefix && m.body.startsWith(m.prefix);
+      if (!isCommand) {
+        return {
+          shouldExecute: false,
+          isCommand: false,
+          type: "command",
+        };
+      }
+
+      const command = m.command ? m.command.toLowerCase() : "";
+
+      const isAccept = Array.isArray(plugin.command)
+        ? plugin.command.includes(command)
+        : plugin.command === command;
+
+      return {
+        shouldExecute: isAccept,
+        isCommand: true,
+        type: "command",
+      };
+    } else {
+      const bodyLower = (m.body || "").toLowerCase();
+      const commands = Array.isArray(plugin.command)
+        ? plugin.command
+        : [plugin.command];
+
+      const isMatch = commands.some((cmd) => {
+        const cmdLower = cmd.toLowerCase();
+        return bodyLower.startsWith(cmdLower + " ") || bodyLower === cmdLower;
+      });
+
+      if (isMatch) {
+        const matchedCmd = commands.find((cmd) => {
+          const cmdLower = cmd.toLowerCase();
+          return bodyLower.startsWith(cmdLower + " ") || bodyLower === cmdLower;
+        });
+
+        m.command = matchedCmd;
+        if (bodyLower.startsWith(matchedCmd.toLowerCase() + " ")) {
+          m.text = m.body.slice(matchedCmd.length + 1).trim();
+          m.args = m.text.split(" ").filter((arg) => arg.length > 0);
+        }
+      }
+
+      return {
+        shouldExecute: isMatch,
+        isCommand: true,
+        type: "no-prefix",
+      };
+    }
+  }
+
+  checkPluginConditions(plugin, m, user, group) {
+    if (plugin.isGroup === true && !m.isGroup) return "group";
+    if (plugin.isPrivate === true && m.isGroup) return "private";
+
+    if (plugin.isROwner && !m.isROwner) return "rowner";
+    if (plugin.isOwner && !m.isOwner) return "owner";
+    if (plugin.isAdmin && !m.isAdmin) return "admin";
+    if (plugin.isBotAdmin && !m.isBotAdmin) return "botAdmin";
+
+    if (plugin.isPremium && !user.premium) return "premium";
+    if (plugin.isVIP && !user.vip) return "VIP";
+
+    if (plugin.isQuoted && !m.isQuoted) return "quoted";
+
+    if (m.isGroup && groupSettings) {
+      if (plugin.isNsfw && !group.isNsfw) return "nsfw";
+      if (plugin.isGame && !group.isGame) return "game";
     }
 
     return false;

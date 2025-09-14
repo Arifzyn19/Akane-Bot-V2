@@ -63,7 +63,7 @@ whatsapp-bot/
 │   │   ├── general/           # General commands
 │   │   │   ├── menu.js        # Command list
 │   │   │   └── ping.js        # Ping test
-│   │   └── admin/             # Admin commands  
+│   │   └── admin/             # Admin commands
 │   │       └── shutdown.js    # Bot shutdown
 │   │
 │   ├── config/                # Configuration
@@ -90,6 +90,7 @@ whatsapp-bot/
 ## 🎯 Commands
 
 ### General Commands
+
 - `!menu` - Tampilkan daftar commands
 - `!ping` - Test response time
 - `!status` - Bot status dan system info
@@ -98,16 +99,19 @@ whatsapp-bot/
 - `!poll` - Create polls in groups
 - `!download` - Download media from quoted messages
 
-### Admin Commands  
+### Admin Commands
+
 - `!shutdown` - Matikan bot (Admin only)
 - `!reload` - Reload commands (Admin only)
 
 ### Owner Commands
+
 - `!eval` - Execute JavaScript code (Owner only)
 
 ## 🔧 Advanced Plugin System
 
 ### Hot Reload Features
+
 - **File Watching**: Otomatis detect perubahan file plugin
 - **Syntax Validation**: Check syntax error sebelum load
 - **Live Updates**: Update plugin tanpa restart bot
@@ -115,12 +119,13 @@ whatsapp-bot/
 - **Multi Format**: Support .js, .mjs, .cjs files
 
 ### Plugin Structure
+
 File plugin harus export default object dengan struktur:
 
 ```javascript
 export default {
   name: "commandname",
-  description: "Command description", 
+  description: "Command description",
   usage: "!commandname [args]",
   category: "general",
   aliases: ["alias1", "alias2"], // optional
@@ -131,14 +136,16 @@ export default {
     // Plugin logic here
     const { msg, args, user, bot, plugins } = context;
     await msg.reply("Hello World!");
-  }
-}
+  },
+};
 ```
 
 ### Context Object
+
 Plugin receive rich context object:
+
 - `msg` - Enhanced message object dengan methods
-- `args` - Command arguments array  
+- `args` - Command arguments array
 - `user` - User data dengan permissions
 - `bot` - Bot configuration
 - `plugins` - Array semua loaded plugins
@@ -148,6 +155,7 @@ Plugin receive rich context object:
 - `isMedia` - Media detection boolean
 
 ### Development Tips
+
 - Edit plugin files akan otomatis reload
 - Syntax error ditampilkan di console
 - Gunakan `!pluginstats` untuk monitor
@@ -156,11 +164,13 @@ Plugin receive rich context object:
 ## 🗄️ Database Modes
 
 ### JSON Mode (Default)
+
 - Data disimpan di `src/models/json/`
 - Tidak perlu setup database
 - Cocok untuk development
 
 ### MongoDB Mode
+
 - Perlu MongoDB server
 - Set `DB_MODE=mongodb` di `.env`
 - Set `MONGO_URI` dengan connection string MongoDB
@@ -184,8 +194,9 @@ npm start
 ## 📝 Logging
 
 Bot menggunakan Pino untuk logging dengan level:
+
 - `error`: Error messages
-- `warn`: Warning messages  
+- `warn`: Warning messages
 - `info`: Info messages (default)
 - `debug`: Debug messages
 
@@ -218,6 +229,7 @@ MIT License
 ## 🆘 Support
 
 Jika menemukan bug atau butuh bantuan:
+
 1. Buat issue di GitHub
 2. Sertakan log error
 3. Jelaskan langkah untuk reproduce

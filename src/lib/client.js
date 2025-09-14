@@ -119,7 +119,7 @@ export function Client({ client: conn, store }) {
     },
 
     decodeJid: {
-     value(jid) {
+      value(jid) {
         if (!jid || typeof jid !== "string")
           return (!nullish(jid) && jid) || null;
         // @ts-ignore
@@ -391,9 +391,11 @@ export function Serialize(conn, msg, store) {
 
   m.pushName = msg.pushName;
 
-  const userNumber = m.sender.replace(/\D+/g, '');
+  const userNumber = m.sender.replace(/\D+/g, "");
   m.isOwner = ENV.OWNER_NUMBERS.includes(userNumber);
-  m.isAdmin = ENV.OWNER_NUMBERS.includes(userNumber) || ENV.ADMIN_NUMBERS.includes(userNumber);
+  m.isAdmin =
+    ENV.OWNER_NUMBERS.includes(userNumber) ||
+    ENV.ADMIN_NUMBERS.includes(userNumber);
 
   if (m.isGroup) {
     m.metadata = store.groupMetadata?.[m.chat] || {};
@@ -455,11 +457,46 @@ export function Serialize(conn, msg, store) {
     }
 
     m.reply = async (text, options = {}) => {
-      return conn.sendMessage(
-        m.chat,
-        { text, ...options },
-        { quoted: m, ...options },
-      );
+      let chatId = options?.from ? options.from : m.chat;
+      let quoted = options?.quoted ? options.quoted : m;
+      if (
+        Buffer.isBuffer(text) ||
+        /^data:.?\/.*?;base64,/i.test(text) ||
+        /^https?:\/\//.test(text) ||
+        fs.existsSync(text)
+      ) {
+        let data = await Function.getFile(text);
+        if (
+          !options.mimetype &&
+          (/utf-8|json/i.test(data.mime) || data.ext == ".bin" || !data.ext)
+        ) {
+          return conn.sendMessage(
+            chatId,
+            {
+              text,
+              mentions: [m.sender, ...conn.parseMention(text)],
+              ...options,
+            },
+            { quoted, ephemeralExpiration: m.expiration, ...options },
+          );
+        } else {
+          return conn.sendMedia(m.chat, data.data, quoted, {
+            ephemeralExpiration: m.expiration,
+            ...options,
+          });
+        }
+      } else {
+        if (!!ENV.msg[text]) text = ENV.msg[text];
+        return conn.sendMessage(
+          chatId,
+          {
+            text,
+            mentions: [m.sender, ...conn.parseMention(text)],
+            ...options,
+          },
+          { quoted, ephemeralExpiration: m.expiration, ...options },
+        );
+      }
     };
 
     m.react = (emoji) =>

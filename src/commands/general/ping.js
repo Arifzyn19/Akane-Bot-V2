@@ -14,15 +14,15 @@ export default {
     const total = (os.totalmem() / 1024 ** 3).toFixed(2);
     const free = (os.freemem() / 1024 ** 3).toFixed(2);
     const used = (total - free).toFixed(2);
-    
+
     await m.reply(
       `🏓 *PONG!*\n\n` +
-      `⚡ Latency: ${(performance.now() - t0).toFixed(2)}ms\n` +
-      `💻 CPU: ${os.cpus().length} cores\n` +
-      `🧠 RAM: ${used} / ${total} GB\n` +
-      `📊 Free: ${free} GB\n` +
-      `🖥️ Platform: ${os.platform()}\n` +
-      `⏰ Uptime: ${process.uptime().toFixed(0)}s`
+        `⚡ Latency: ${(performance.now() - t0).toFixed(2)}ms\n` +
+        `💻 CPU: ${os.cpus().length} cores\n` +
+        `🧠 RAM: ${used} / ${total} GB\n` +
+        `📊 Free: ${free} GB\n` +
+        `🖥️ Platform: ${os.platform()}\n` +
+        `⏰ Uptime: ${process.uptime().toFixed(0)}s`,
     );
-  }
+  },
 };
