@@ -3,58 +3,76 @@ import baileys, {
   useMultiFileAuthState,
   makeCacheableSignalKeyStore,
   Browsers,
-  delay,
-} from "@whiskeysockets/baileys";
-import { makeInMemoryStore } from "@rodrigogs/baileys-store";
-import { Boom } from "@hapi/boom";
-import qrcode from "qrcode-terminal";
-import pino from "pino";
-import gradient from "gradient-string";
-import chalk from "chalk";
-import { ENV } from "../config/env.js";
-import { Client, protoType } from "./client.js";
+} from "@whiskeysockets/baileys"
+import { makeInMemoryStore } from "@rodrigogs/baileys-store"
+import { Boom } from "@hapi/boom"
+import qrcode from "qrcode-terminal"
+import pino from "pino"
+import gradient from "gradient-string"
+import chalk from "chalk"
+import { ENV } from "../config/env.js"
+import { Client, protoType } from "./client.js"
+import fs from "fs"
 
 export class BaileysClient {
   constructor() {
-    this.sock = null;
-    this.store = null;
-    this.isConnected = false;
-    this.qrRetries = 0;
-    this.maxQrRetries = 5;
-    this.sessionPath = ENV.session || "session";
-    this.pairingCodeRequested = false;
+    this.sock = null
+    this.store = null
+    this.isConnected = false
+    this.qrRetries = 0
+    this.maxQrRetries = 5
+    this.sessionPath = ENV.session || "session"
+    this.pairingCodeRequested = false
+    this.botInstance = null
+    this.state = null
+    this.saveCreds = null
 
     this.logger = pino({
       level: "fatal",
-      timestamp: () => `,"time":"${new Date().toISOString()}"`,
-    }).child({ class: "client" });
+      timestamp: () => `,"time":"${new Date().toISOString()}\"`,
+    }).child({ class: "client" })
+
+    this.initializeAuthState()
+  }
+
+  setBotInstance(botInstance) {
+    this.botInstance = botInstance
+  }
+
+  async initializeAuthState() {
+    const { state, saveCreds } = await useMultiFileAuthState("./" + this.sessionPath)
+
+    this.state = state
+    this.saveCreds = saveCreds
   }
 
   async initialize() {
-    console.log("🚀 Initializing WhatsApp Bot...");
+    console.log("🚀 Initializing WhatsApp Bot...")
 
-    protoType();
+    protoType()
 
     this.store = makeInMemoryStore({
       logger: this.logger.child({ level: "silent" }),
-    });
+    })
 
-    await this.connect();
+    await this.initializeAuthState()
+
+    await this.connect()
   }
 
   async connect() {
     try {
-      const { state, saveCreds } = await useMultiFileAuthState(
-        "./" + this.sessionPath,
-      );
+      if (!this.state || !this.saveCreds) {
+        throw new Error("Auth state not initialized")
+      }
 
       this.sock = baileys.default({
         logger: this.logger.child({ level: "silent" }),
         browser: Browsers.ubuntu("Chrome"),
         printQRInTerminal: ENV.PRINT_QR || false,
         auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, this.logger),
+          creds: this.state.creds,
+          keys: makeCacheableSignalKeyStore(this.state.keys, this.logger),
         },
         markOnlineOnConnect: false,
         generateHighQualityLinkPreview: true,
@@ -68,210 +86,220 @@ export class BaileysClient {
         },
         getMessage: async (key) => {
           if (this.store) {
-            const msg = await this.store.loadMessage(key.remoteJid, key.id);
-            return msg?.message || undefined;
+            const msg = await this.store.loadMessage(key.remoteJid, key.id)
+            return msg?.message || undefined
           }
-          return undefined;
+          return undefined
         },
-      });
+      })
 
       if (this.store) {
         this.store.bind(this.sock.ev, {
           groupMetadata: this.sock.groupMetadata,
-        });
+        })
       }
 
-      this.sock = Client({ client: this.sock, store: this.store });
+      this.sock = Client({ client: this.sock, store: this.store })
 
-      if (
-        ENV.USE_PAIRING_CODE &&
-        !this.sock.authState.creds.registered &&
-        !this.pairingCodeRequested
-      ) {
-        let phoneNumber = ENV.PAIRING_NUMBER.replace(/[^0-9]/g, "");
+      if (ENV.USE_PAIRING_CODE && !this.sock.authState.creds.registered && !this.pairingCodeRequested) {
+        const phoneNumber = ENV.PAIRING_NUMBER.replace(/[^0-9]/g, "")
 
-        console.log("phoneNumber :", phoneNumber);
+        console.log("phoneNumber :", phoneNumber)
         if (phoneNumber) {
-          this.pairingCodeRequested = true;
+          this.pairingCodeRequested = true
 
           setTimeout(async () => {
             try {
-              const code =
-                (await (await this.sock.requestPairingCode(phoneNumber))
-                  ?.match(/.{1,4}/g)
-                  ?.join("-")) || "";
-              console.log(
-                gradient.passion("\n🔑 Your Pairing Code: "),
-                chalk.bold.green(code),
-              );
-              console.log(
-                chalk.yellow(
-                  `📱 Open WhatsApp > Settings > Linked Devices > Link Device`,
-                ),
-              );
+              const code = (await (await this.sock.requestPairingCode(phoneNumber))?.match(/.{1,4}/g)?.join("-")) || ""
+              console.log(gradient.passion("\n🔑 Your Pairing Code: "), chalk.bold.green(code))
+              console.log(chalk.yellow(`📱 Open WhatsApp > Settings > Linked Devices > Link Device`))
             } catch (error) {
-              console.error(
-                "❌ Failed to request pairing code:",
-                error.message,
-              );
-              this.pairingCodeRequested = false;
+              console.error("❌ Failed to request pairing code:", error.message)
+              this.pairingCodeRequested = false
             }
-          }, 3000);
+          }, 3000)
         } else {
-          console.log(
-            chalk.red(
-              "❌ PAIRING_NUMBER is required when USE_PAIRING_CODE is true",
-            ),
-          );
+          console.log(chalk.red("❌ PAIRING_NUMBER is required when USE_PAIRING_CODE is true"))
         }
       }
 
       // Handle connection updates
       this.sock.ev.on("connection.update", async (update) => {
-        await this.handleConnectionUpdate(update);
-      });
+        await this.handleConnectionUpdate(update)
+      })
 
       // Handle credentials update
-      this.sock.ev.on("creds.update", saveCreds);
+      this.sock.ev.on("creds.update", this.saveCreds)
 
       // Handle messages
       this.sock.ev.on("messages.upsert", async (m) => {
-        await this.handleMessages(m);
-      });
+        await this.handleMessages(m)
+      })
 
-      return this.sock;
+      return this.sock
     } catch (error) {
-      console.error("❌ Connection failed:", error);
+      console.error("❌ Connection failed:", error)
     }
   }
 
   async handleConnectionUpdate(update) {
-    const { connection, lastDisconnect, qr } = update;
+    const { connection, lastDisconnect, qr } = update
 
     if (qr && ENV.PRINT_QR) {
-      console.log(
-        gradient.rainbow("\n📱 QR Code generated. Scan with WhatsApp:"),
-      );
-      qrcode.generate(qr, { small: true });
-      this.qrRetries++;
+      console.log(gradient.rainbow("\n📱 QR Code generated. Scan with WhatsApp:"))
+      qrcode.generate(qr, { small: true })
+      this.qrRetries++
+
+      if (this.botInstance) {
+        this.botInstance.emitToDashboard("bot:qr", { qr, retries: this.qrRetries })
+      }
 
       if (this.qrRetries >= this.maxQrRetries) {
-        console.log("❌ Max QR retries reached. Exiting...");
-        process.exit(1);
+        console.log("❌ Max QR retries reached. Exiting...")
+        if (this.botInstance) {
+          this.botInstance.emitToDashboard("bot:error", { error: "Max QR retries reached" })
+        }
+        process.exit(1)
       }
     }
 
     if (connection === "close") {
-      let reason = new Boom(lastDisconnect?.error)?.output.statusCode;
-      let statusCode = lastDisconnect?.error?.output?.statusCode || reason;
+      const reason = new Boom(lastDisconnect?.error)?.output.statusCode
+      const statusCode = lastDisconnect?.error?.output?.statusCode || reason
+
+      if (this.botInstance) {
+        this.botInstance.emitToDashboard("bot:status", {
+          status: "disconnected",
+          reason: statusCode,
+          timestamp: Date.now(),
+        })
+      }
 
       switch (statusCode) {
         case DisconnectReason.connectionClosed:
         case DisconnectReason.connectionLost:
         case 408: // Connection timed out
-          console.log(chalk.red("[+] Connection timed out. restarting..."));
-          if (this.connect) await this.connect();
-          break;
+          console.log(chalk.red("[+] Connection timed out. restarting..."))
+          if (this.connect) await this.connect()
+          break
 
         case DisconnectReason.timedOut:
         case 503: // Unavailable service
-          console.log(chalk.red("[+] Unavailable service. restarting..."));
-          if (this.connect) await this.connect();
-          break;
+          console.log(chalk.red("[+] Unavailable service. restarting..."))
+          if (this.connect) await this.connect()
+          break
 
         case DisconnectReason.restartRequired:
         case 428: // Connection closed
-          console.log(chalk.cyan("[+] Connection closed, restarting..."));
-          if (this.connect) await this.connect();
-          break;
+          console.log(chalk.cyan("[+] Connection closed, restarting..."))
+          if (this.connect) await this.connect()
+          break
 
         case 515: // Need to restart
-          console.log(chalk.cyan("[+] Need to restart, restarting..."));
-          if (this.connect) await this.connect();
-          break;
+          console.log(chalk.cyan("[+] Need to restart, restarting..."))
+          if (this.connect) await this.connect()
+          break
 
         case DisconnectReason.loggedOut:
         case 401: // Session Logged Out
           try {
-            console.log(
-              chalk.cyan("[+] Session Logged Out.. Recreate session..."),
-            );
+            console.log(chalk.cyan("[+] Session Logged Out.. Recreate session..."))
 
             if (this.sessionPath) {
               fs.rmSync(this.sessionPath, {
                 recursive: true,
                 force: true,
-              });
+              })
             }
 
-            process.send("reset");
-            console.log(chalk.green("[+] Session removed!!"));
+            process.send("reset")
+            console.log(chalk.green("[+] Session removed!!"))
           } catch (error) {
-            console.log(chalk.cyan("[+] Session not found!!"));
+            console.log(chalk.cyan("[+] Session not found!!"))
           }
-          break;
+          break
 
         case DisconnectReason.badSession:
         case 403: // Banned
-          console.log(chalk.red(`[+] Your WhatsApp Has Been Banned :D`));
+          console.log(chalk.red(`[+] Your WhatsApp Has Been Banned :D`))
 
           if (this.sessionPath) {
-            fs.rmSync(this.sessionPath, { recursive: true, force: true });
+            fs.rmSync(this.sessionPath, { recursive: true, force: true })
           } else {
-            fs.rmSync(".session", { recursive: true, force: true });
+            fs.rmSync(".session", { recursive: true, force: true })
           }
 
-          process.send("reset");
-          break;
+          process.send("reset")
+          break
 
         case DisconnectReason.multideviceMismatch:
         case 405: // Session Not Logged In
           try {
-            console.log(
-              chalk.cyan("[+] Session Not Logged In.. Recreate session..."),
-            );
+            console.log(chalk.cyan("[+] Session Not Logged In.. Recreate session..."))
 
             if (this.sessionPath) {
-              fs.rmSync(options.sessionPath, { recursive: true, force: true });
+              fs.rmSync(this.sessionPath, { recursive: true, force: true })
             } else {
-              fs.rmSync(".session", { recursive: true, force: true });
+              fs.rmSync(".session", { recursive: true, force: true })
             }
-            console.log(chalk.green("[+] Session removed!!"));
-            process.send("reset");
+            console.log(chalk.green("[+] Session removed!!"))
+            process.send("reset")
           } catch (error) {
-            console.log(chalk.cyan("[+] Session not found!!"));
+            console.log(chalk.cyan("[+] Session not found!!"))
           }
-          break;
+          break
 
         default:
       }
     } else if (connection === "open") {
-      this.isConnected = true;
-      this.qrRetries = 0;
-      this.pairingCodeRequested = false;
-      console.log(gradient.morning("✅ Bot connected successfully!"));
+      this.isConnected = true
+      this.qrRetries = 0
+      this.pairingCodeRequested = false
+      console.log(gradient.morning("✅ Bot connected successfully!"))
+
+      if (this.botInstance) {
+        this.botInstance.emitToDashboard("bot:status", {
+          status: "connected",
+          user: this.sock.user,
+          timestamp: Date.now(),
+        })
+      }
     }
   }
 
   async handleMessages(m) {
     try {
-      const msg = m.messages?.[0];
-      if (!msg || !msg.message) return;
+      const msg = m.messages?.[0]
+      if (!msg || !msg.message) return
 
-      const { MessageHandler } = await import("../handlers/message.js");
-      const handler = new MessageHandler(this.sock);
+      if (this.botInstance) {
+        this.botInstance.emitToDashboard("message:received", {
+          from: msg.key.remoteJid,
+          message: msg.message,
+          timestamp: msg.messageTimestamp,
+          fromMe: msg.key.fromMe,
+        })
+      }
 
-      await handler.handle(msg);
+      const { MessageHandler } = await import("../handlers/message.js")
+      const handler = new MessageHandler(this.sock)
+
+      await handler.handle(msg)
     } catch (error) {
-      console.error("❌ Error handling message:", error);
+      console.error("❌ Error handling message:", error)
+      if (this.botInstance) {
+        this.botInstance.emitToDashboard("bot:error", {
+          error: "Message handling failed: " + error.message,
+        })
+      }
     }
   }
 
   async disconnect() {
     if (this.sock) {
-      await this.sock.logout();
-      this.isConnected = false;
-      console.log("🔌 Bot disconnected");
+      await this.sock.logout()
+      this.isConnected = false
+      console.log("🔌 Bot disconnected")
     }
   }
 }

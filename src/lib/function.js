@@ -59,4 +59,21 @@ export default class Function {
   static escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
+  
+  static sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  static formatUptime = (uptime) => {
+  const seconds = Math.floor(uptime % 60);
+  const minutes = Math.floor((uptime / 60) % 60);
+  const hours = Math.floor((uptime / 3600) % 24);
+  const days = Math.floor(uptime / 86400);
+
+  let result = "";
+  if (days > 0) result += `${days}d `;
+  if (hours > 0) result += `${hours}h `;
+  if (minutes > 0) result += `${minutes}m `;
+  result += `${seconds}s`;
+
+  return result.trim();
+  }
 }

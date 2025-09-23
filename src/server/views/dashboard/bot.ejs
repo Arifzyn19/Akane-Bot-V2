@@ -1,0 +1,486 @@
+<!-- Header -->
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 space-y-4 sm:space-y-0">
+    <h1 class="text-3xl font-bold text-white">Bot Management</h1>
+    <div class="flex items-center space-x-2">
+        <div class="w-2 h-2 bg-<%= botStatus ? 'green' : 'red' %>-400 rounded-full <%= botStatus ? 'animate-pulse' : '' %>"></div>
+        <span class="text-lg font-medium text-<%= botStatus ? 'green' : 'red' %>-400">
+            <%= botStatus ? 'Online' : 'Offline' %>
+        </span>
+    </div>
+</div>
+
+<!-- Bot Control Panel -->
+<div class="bg-dark-800 rounded-xl border border-dark-700 p-6 mb-8">
+    <div class="flex items-center space-x-2 mb-6">
+        <i data-lucide="settings" class="w-5 h-5 text-blue-400"></i>
+        <h2 class="text-xl font-semibold text-white">Bot Control Panel</h2>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <button 
+            onclick="startBot()" 
+            class="flex items-center justify-center space-x-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:opacity-50 text-white py-3 px-4 rounded-lg transition-colors <%= botStatus ? 'cursor-not-allowed' : '' %>"
+            <%= botStatus ? 'disabled' : '' %>
+        >
+            <i data-lucide="play" class="w-4 h-4"></i>
+            <span>Start Bot</span>
+        </button>
+        <button 
+            onclick="stopBot()" 
+            class="flex items-center justify-center space-x-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:opacity-50 text-white py-3 px-4 rounded-lg transition-colors <%= !botStatus ? 'cursor-not-allowed' : '' %>"
+            <%= !botStatus ? 'disabled' : '' %>
+        >
+            <i data-lucide="stop-circle" class="w-4 h-4"></i>
+            <span>Stop Bot</span>
+        </button>
+        <button 
+            onclick="restartBot()" 
+            class="flex items-center justify-center space-x-2 bg-yellow-600 hover:bg-yellow-700 text-white py-3 px-4 rounded-lg transition-colors"
+        >
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            <span>Restart Bot</span>
+        </button>
+        <button 
+            onclick="reloadPlugins()" 
+            class="flex items-center justify-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-lg transition-colors"
+        >
+            <i data-lucide="puzzle" class="w-4 h-4"></i>
+            <span>Reload Plugins</span>
+        </button>
+    </div>
+</div>
+
+<!-- Bot Information & Connection Status -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <!-- Bot Information -->
+    <div class="bg-dark-800 rounded-xl border border-dark-700 p-6">
+        <div class="flex items-center space-x-2 mb-6">
+            <i data-lucide="info" class="w-5 h-5 text-blue-400"></i>
+            <h2 class="text-xl font-semibold text-white">Bot Information</h2>
+        </div>
+        <div class="space-y-4">
+            <div class="flex justify-between">
+                <span class="text-dark-300">Bot Name:</span>
+                <span class="text-white"><%= process.env.BOT_NAME || 'AkaneBot' %></span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-dark-300">Prefix:</span>
+                <code class="bg-dark-700 text-green-400 px-2 py-1 rounded"><%= process.env.PREFIX || '!' %></code>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-dark-300">Auto Reconnect:</span>
+                <span class="px-2 py-1 rounded text-xs font-semibold bg-<%= process.env.AUTO_RECONNECT === 'true' ? 'green-600' : 'gray-600' %> text-white">
+                    <%= process.env.AUTO_RECONNECT === 'true' ? 'Enabled' : 'Disabled' %>
+                </span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-dark-300">Log Level:</span>
+                <span class="text-white"><%= process.env.LOG_LEVEL || 'info' %></span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-dark-300">Commands Directory:</span>
+                <code class="bg-dark-700 text-blue-400 px-2 py-1 rounded text-sm"><%= process.env.COMMANDS_DIR || 'src/commands' %></code>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Status -->
+    <div class="bg-dark-800 rounded-xl border border-dark-700 p-6">
+        <div class="flex items-center space-x-2 mb-6">
+            <i data-lucide="smartphone" class="w-5 h-5 text-green-400"></i>
+            <h2 class="text-xl font-semibold text-white">Connection Status</h2>
+        </div>
+        <div id="connectionInfo">
+            <div class="text-center py-8">
+                <div class="inline-flex items-center justify-center space-x-2 text-dark-400">
+                    <div class="animate-spin rounded-full h-6 w-6 border-2 border-blue-400 border-t-transparent"></div>
+                    <span>Loading connection information...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mt-6">
+            <button onclick="showQRCode()" class="w-full flex items-center justify-center space-x-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 text-white py-3 px-4 rounded-lg transition-colors">
+                <i data-lucide="qr-code" class="w-4 h-4"></i>
+                <span>Show QR Code</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Plugin Management -->
+<div class="bg-dark-800 rounded-xl border border-dark-700 p-6 mb-8">
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center space-x-2">
+            <i data-lucide="puzzle" class="w-5 h-5 text-purple-400"></i>
+            <h2 class="text-xl font-semibold text-white">Plugin Management</h2>
+        </div>
+        <button onclick="loadPluginList()" class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            <span>Refresh List</span>
+        </button>
+    </div>
+    
+    <p class="text-dark-300 mb-6">Manage bot plugins and commands</p>
+    
+    <div id="pluginList">
+        <div class="text-center py-8">
+            <i data-lucide="puzzle" class="w-12 h-12 text-dark-400 mx-auto mb-4"></i>
+            <p class="text-dark-400">Click "Refresh List" to load plugins</p>
+        </div>
+    </div>
+</div>
+
+<!-- Console Output -->
+<div class="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
+    <div class="flex items-center justify-between p-6 border-b border-dark-700">
+        <div class="flex items-center space-x-2">
+            <i data-lucide="terminal" class="w-5 h-5 text-green-400"></i>
+            <h2 class="text-xl font-semibold text-white">Console Output</h2>
+        </div>
+        <button onclick="clearConsole()" class="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            <span>Clear</span>
+        </button>
+    </div>
+    <div class="bg-black">
+        <div 
+            id="consoleOutput" 
+            class="text-green-400 p-4 h-80 overflow-y-auto font-mono text-sm leading-relaxed"
+        >
+            <div class="text-dark-400">Console output will appear here...</div>
+        </div>
+    </div>
+</div>
+
+<!-- QR Code Modal -->
+<div id="qrCodeModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-dark-800 rounded-xl border border-dark-700 p-6 w-full max-w-md mx-4">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-white">WhatsApp QR Code</h3>
+            <button onclick="closeQRCodeModal()" class="text-dark-400 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <div id="qrCodeContainer" class="text-center">
+            <div class="inline-flex items-center justify-center space-x-2 text-dark-400">
+                <div class="animate-spin rounded-full h-6 w-6 border-2 border-blue-400 border-t-transparent"></div>
+                <span>Loading QR Code...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+<script>
+let socket;
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Lucide icons
+    lucide.createIcons();
+    
+    initializeSocket();
+    loadConnectionInfo();
+});
+
+function initializeSocket() {
+    socket = io();
+    
+    socket.emit('join-admin', { isAdmin: true });
+    
+    socket.on('connection-status', function(data) {
+        updateConnectionStatus(data);
+    });
+    
+    socket.on('qr-code', function(data) {
+        displayQRCode(data.qr);
+    });
+    
+    socket.on('console-log', function(data) {
+        addConsoleLog(data.message, data.level);
+    });
+}
+
+async function loadConnectionInfo() {
+    try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+        
+        if (data.success) {
+            updateConnectionInfo(data.data);
+        }
+    } catch (error) {
+        console.error('Failed to load connection info:', error);
+    }
+}
+
+function updateConnectionInfo(data) {
+    const connectionInfo = document.getElementById('connectionInfo');
+    
+    connectionInfo.innerHTML = `
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="text-center">
+                <div class="text-3xl mb-2 text-${data.isConnected ? 'green' : 'red'}-400">
+                    <i data-lucide="${data.isConnected ? 'check-circle' : 'x-circle'}" class="w-8 h-8 mx-auto"></i>
+                </div>
+                <p class="text-sm text-dark-400">Connection</p>
+            </div>
+            <div class="text-center">
+                <div class="text-2xl font-bold text-blue-400 mb-2">
+                    ${Math.floor(data.uptime / 3600)}h ${Math.floor((data.uptime % 3600) / 60)}m
+                </div>
+                <p class="text-sm text-dark-400">Uptime</p>
+            </div>
+        </div>
+        
+        <div class="border-t border-dark-700 pt-4">
+            <div class="flex justify-between text-sm mb-2">
+                <span class="text-dark-300">Memory Usage:</span>
+                <span class="text-white">${Math.round(data.memoryUsage.heapUsed / 1024 / 1024)}MB</span>
+            </div>
+            <div class="w-full bg-dark-700 rounded-full h-2">
+                <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                     style="width: ${Math.round(data.memoryUsage.heapUsed / data.memoryUsage.heapTotal * 100)}%"></div>
+            </div>
+        </div>
+    `;
+    
+    // Re-initialize icons
+    lucide.createIcons();
+}
+
+async function startBot() {
+    await performBotAction('start', 'Starting bot...');
+}
+
+async function stopBot() {
+    if (!confirm('Are you sure you want to stop the bot?')) return;
+    await performBotAction('stop', 'Stopping bot...');
+}
+
+async function restartBot() {
+    if (!confirm('Are you sure you want to restart the bot?')) return;
+    await performBotAction('restart', 'Restarting bot...');
+}
+
+async function reloadPlugins() {
+    await performBotAction('reload-plugins', 'Reloading plugins...');
+}
+
+async function performBotAction(action, loadingMessage) {
+    try {
+        showToast(loadingMessage, 'info');
+        
+        const response = await fetch(`/bot/action/${action}`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            addConsoleLog(`[${new Date().toLocaleTimeString()}] ${data.message}`, 'info');
+            
+            // Refresh page after a delay for start/stop/restart actions
+            if (['start', 'stop', 'restart'].includes(action)) {
+                setTimeout(() => location.reload(), 2000);
+            }
+        } else {
+            showToast('Action failed: ' + data.error, 'error');
+            addConsoleLog(`[${new Date().toLocaleTimeString()}] Error: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        showToast('Action failed', 'error');
+        addConsoleLog(`[${new Date().toLocaleTimeString()}] Error: ${error.message}`, 'error');
+    }
+}
+
+async function showQRCode() {
+    const modal = document.getElementById('qrCodeModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    
+    // Re-initialize icons in modal
+    lucide.createIcons();
+    
+    try {
+        const response = await fetch('/api/qr');
+        const data = await response.json();
+        
+        if (data.success && data.data.qr) {
+            displayQRCode(data.data.qr);
+        } else {
+            document.getElementById('qrCodeContainer').innerHTML = `
+                <div class="text-center text-dark-400 py-8">
+                    <i data-lucide="alert-circle" class="w-12 h-12 mx-auto mb-4"></i>
+                    <p class="text-lg mb-2">QR Code not available</p>
+                    <p class="text-sm">Bot may already be connected</p>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+    } catch (error) {
+        document.getElementById('qrCodeContainer').innerHTML = `
+            <div class="text-center text-red-400 py-8">
+                <i data-lucide="x-circle" class="w-12 h-12 mx-auto mb-4"></i>
+                <p class="text-lg mb-2">Failed to load QR Code</p>
+                <p class="text-sm">Please try again later</p>
+            </div>
+        `;
+        lucide.createIcons();
+    }
+}
+
+function closeQRCodeModal() {
+    const modal = document.getElementById('qrCodeModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+function displayQRCode(qrData) {
+    document.getElementById('qrCodeContainer').innerHTML = `
+        <div class="text-center">
+            <div class="bg-white p-4 rounded-lg inline-block mb-4">
+                <img src="data:image/png;base64,${qrData}" alt="QR Code" class="max-w-xs w-full h-auto">
+            </div>
+            <p class="text-dark-300 mb-2">Scan this QR code with WhatsApp</p>
+            <p class="text-dark-500 text-sm">QR code expires in 60 seconds</p>
+        </div>
+    `;
+}
+
+function loadPluginList() {
+    const pluginList = document.getElementById('pluginList');
+    
+    pluginList.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div class="bg-dark-700 border border-green-600 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-white font-semibold">General Commands</h3>
+                        <p class="text-dark-400 text-sm">5 commands loaded</p>
+                    </div>
+                    <span class="px-2 py-1 bg-green-600 text-white text-xs font-semibold rounded">Active</span>
+                </div>
+            </div>
+            <div class="bg-dark-700 border border-green-600 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-white font-semibold">Media Commands</h3>
+                        <p class="text-dark-400 text-sm">4 commands loaded</p>
+                    </div>
+                    <span class="px-2 py-1 bg-green-600 text-white text-xs font-semibold rounded">Active</span>
+                </div>
+            </div>
+            <div class="bg-dark-700 border border-green-600 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-white font-semibold">Utility Commands</h3>
+                        <p class="text-dark-400 text-sm">6 commands loaded</p>
+                    </div>
+                    <span class="px-2 py-1 bg-green-600 text-white text-xs font-semibold rounded">Active</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function addConsoleLog(message, level = 'info') {
+    const consoleOutput = document.getElementById('consoleOutput');
+    const timestamp = new Date().toLocaleTimeString();
+    
+    const logEntry = document.createElement('div');
+    logEntry.className = `console-entry text-${getLogColor(level)} mb-1`;
+    logEntry.innerHTML = `<span class="text-dark-500">[${timestamp}]</span> ${message}`;
+    
+    consoleOutput.appendChild(logEntry);
+    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    
+    // Keep only last 100 entries
+    while (consoleOutput.children.length > 100) {
+        consoleOutput.removeChild(consoleOutput.firstChild);
+    }
+}
+
+function getLogColor(level) {
+    switch (level) {
+        case 'error': return 'red-400';
+        case 'warn': return 'yellow-400';
+        case 'success': return 'green-400';
+        case 'info': return 'blue-400';
+        default: return 'green-400';
+    }
+}
+
+function clearConsole() {
+    document.getElementById('consoleOutput').innerHTML = 
+        '<div class="text-dark-400">Console cleared...</div>';
+}
+
+function showToast(message, type = 'info') {
+    const toastContainer = document.getElementById('toastContainer');
+    
+    const colorClasses = {
+        'success': 'bg-green-600 border-green-500',
+        'error': 'bg-red-600 border-red-500', 
+        'warning': 'bg-yellow-600 border-yellow-500',
+        'info': 'bg-blue-600 border-blue-500'
+    };
+    
+    const iconMap = {
+        'success': 'check-circle',
+        'error': 'x-circle',
+        'warning': 'alert-triangle', 
+        'info': 'info'
+    };
+    
+    const toastId = 'toast-' + Date.now();
+    const toastHtml = `
+        <div id="${toastId}" class="flex items-center space-x-3 ${colorClasses[type]} text-white px-4 py-3 rounded-lg shadow-lg border transform translate-x-full transition-transform duration-300">
+            <i data-lucide="${iconMap[type]}" class="w-5 h-5 flex-shrink-0"></i>
+            <span class="flex-1">${message}</span>
+            <button onclick="closeToast('${toastId}')" class="text-white hover:text-gray-200 transition-colors">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+    `;
+    
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    
+    // Initialize icons and animate in
+    lucide.createIcons();
+    
+    const toastElement = document.getElementById(toastId);
+    setTimeout(() => {
+        toastElement.classList.remove('translate-x-full');
+    }, 100);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        closeToast(toastId);
+    }, 5000);
+}
+
+function closeToast(toastId) {
+    const toast = document.getElementById(toastId);
+    if (toast) {
+        toast.classList.add('translate-x-full');
+        setTimeout(() => {
+            toast.remove();
+        }, 300);
+    }
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', function(event) {
+    const qrModal = document.getElementById('qrCodeModal');
+    if (event.target === qrModal) {
+        closeQRCodeModal();
+    }
+});
+
+// Handle escape key to close modal
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeQRCodeModal();
+    }
+});
+</script>

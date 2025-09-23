@@ -1,4 +1,6 @@
-import { formatUptime, hasPermission } from "../../lib/utils.js";
+import { ENV } from "../../config/env.js";
+import { plugins } from "../../lib/plugin.js";
+import Function from "../../lib/function.js";
 
 export default {
   name: "menu",
@@ -9,20 +11,12 @@ export default {
   aliases: ["help", "h"],
   permissions: ["all"],
 
-  execute: async (sock, { msg, args, user, bot, commands, pushName }) => {
+  execute: async (m, { sock, args }) => {
     const requestedCategory = args[0]?.toLowerCase();
-
-    // Group commands by category
+    const commands = Object.values(plugins);
+    
     const categories = {};
     commands.forEach((cmd) => {
-      // Filter commands based on user permissions
-      if (
-        cmd.permissions &&
-        !hasPermission(user.permissions, cmd.permissions)
-      ) {
-        return;
-      }
-
       const category = cmd.category || "general";
       if (!categories[category]) {
         categories[category] = [];
@@ -30,23 +24,24 @@ export default {
       categories[category].push(cmd);
     });
 
-    let menuText = `╭─「 *${bot.name}* 」\n`;
-    menuText += `│ 👋 Hello, ${pushName || "User"}!\n`;
-    menuText += `│ ⚡ Uptime: ${formatUptime(process.uptime())}\n`;
-    menuText += `│ 📱 Prefix: ${bot.prefix}\n`;
-    menuText += `│ 👤 Role: ${user.permissions.join(", ")}\n`;
+    let menuText = `╭─「 *Akane Bot* 」\n`;
+    menuText += `│ 👋 Hello, ${m.pushName || "User"}!\n`;
+    menuText += `│ ⚡ Uptime: ${Function.formatUptime(process.uptime())}\n`;
+    menuText += `│ 📱 Prefix: ${m.prefix}\n`;
     menuText += `│ 🤖 Enhanced Client: ✅\n`;
     menuText += `╰────────────────\n\n`;
 
-    if (requestedCategory) {
-      // Show specific category
+    if (requestedCategory) { 
       if (categories[requestedCategory]) {
         menuText += `╭─「 *${requestedCategory.toUpperCase()}* 」\n`;
         categories[requestedCategory].forEach((cmd) => {
           const aliases = cmd.aliases ? ` (${cmd.aliases.join(", ")})` : "";
-          menuText += `│ ${bot.prefix}${cmd.name}${aliases}\n`;
+          const commandName = Array.isArray(cmd.command) ? cmd.command[0] : cmd.command;
+          const prefix = cmd.prefix === false ? '' : m.prefix;
+          menuText += `│ ${prefix}${commandName}${aliases}\n`;
           menuText += `│   ${cmd.description || "No description"}\n`;
           if (cmd.usage) menuText += `│   📖 ${cmd.usage}\n`;
+          if (cmd.cooldown) menuText += `│   ⏱️ Cooldown: ${cmd.cooldown}s\n`;
         });
         menuText += `╰────────────────\n`;
       } else {
@@ -56,32 +51,26 @@ export default {
           .join("\n")}`;
       }
     } else {
-      // Show all categories
       Object.keys(categories)
         .sort()
         .forEach((category) => {
           menuText += `╭─「 *${category.toUpperCase()}* 」\n`;
           categories[category].forEach((cmd) => {
-            menuText += `│ ${bot.prefix}${cmd.name} - ${cmd.description || "No description"}\n`;
+            const commandName = Array.isArray(cmd.command) ? cmd.command[0] : cmd.command;
+            const prefix = cmd.prefix === false ? '' : m.prefix;
+            menuText += `│ ${prefix}${commandName} - ${cmd.description || "No description"}\n`;
           });
           menuText += `╰────────────────\n\n`;
         });
-
-      menuText += `💡 *Enhanced Features:*\n`;
-      menuText += `• Advanced message handling\n`;
-      menuText += `• Media download & processing\n`;
-      menuText += `• Poll creation in groups\n`;
-      menuText += `• Reaction support\n`;
-      menuText += `• Enhanced permissions\n\n`;
-
+        
       menuText += `🔧 *Tips:*\n`;
-      menuText += `• Use ${bot.prefix}menu <category> for detailed info\n`;
+      menuText += `• Use ${m.prefix}menu <category> for detailed info\n`;
       menuText += `• Commands may have cooldowns\n`;
       menuText += `• Some commands require special permissions\n`;
-      menuText += `• Try ${bot.prefix}test to check client features`;
+      menuText += `• Try ${m.prefix}test to check client features`;
     }
 
-    await msg.reply(menuText);
-    await msg.react("📋");
+    await m.reply(menuText);
+    await m.react("📋");
   },
 };

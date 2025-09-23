@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - AkaneBot Dashboard</title>
+    
+    <!-- Tailwind CSS --> 
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            50: '#f8f9fa',
+                            100: '#f1f3f4',
+                            200: '#e8eaed',
+                            300: '#dadce0',
+                            400: '#bdc1c6',
+                            500: '#9aa0a6',
+                            600: '#80868b',
+                            700: '#5f6368',
+                            800: '#3c4043',
+                            850: '#2d3134',
+                            900: '#202124',
+                            950: '#181818'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-dark-900 text-white min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-dark-800 border-b border-dark-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <a href="/dashboard" class="flex items-center space-x-2 text-white hover:text-blue-400 transition-colors">
+                        <i data-lucide="bot" class="w-6 h-6"></i>
+                        <span class="text-xl font-semibold">AkaneBot</span>
+                    </a>
+                </div>
+                
+                <!-- Desktop Menu -->
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="/dashboard" class="flex items-center space-x-2 text-dark-300 hover:bg-dark-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                            <i data-lucide="gauge" class="w-4 h-4"></i>
+                            <span>Dashboard</span>
+                        </a>
+                        <a href="/dashboard/bot" class="flex items-center space-x-2 text-dark-300 hover:bg-dark-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                            <i data-lucide="settings" class="w-4 h-4"></i>
+                            <span>Bot Control</span>
+                        </a>
+                        <a href="/dashboard/messages" class="flex items-center space-x-2 text-dark-300 hover:bg-dark-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                            <i data-lucide="message-circle" class="w-4 h-4"></i>
+                            <span>Messages</span>
+                        </a>
+                        <a href="/dashboard/statistics" class="flex items-center space-x-2 text-dark-300 hover:bg-dark-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                            <i data-lucide="trending-up" class="w-4 h-4"></i>
+                            <span>Statistics</span>
+                        </a>
+                        <a href="/dashboard/settings" class="flex items-center space-x-2 text-dark-300 hover:bg-dark-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                            <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                            <span>Settings</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- User Menu -->
+                <div class="flex items-center space-x-4">
+                    <div class="relative group">
+                        <button class="flex items-center space-x-2 text-dark-300 hover:text-white transition-colors">
+                            <i data-lucide="user" class="w-5 h-5"></i>
+                            <span class="hidden md:block">Admin</span>
+                            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                        </button>
+                        <div class="absolute right-0 mt-2 w-48 bg-dark-800 border border-dark-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                            <form action="/auth/logout" method="POST" class="p-2">
+                                <button type="submit" class="flex items-center space-x-2 w-full text-left px-3 py-2 text-dark-300 hover:text-white hover:bg-dark-700 rounded-md transition-colors">
+                                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                                    <span>Logout</span>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Mobile Menu Button -->
+                <div class="md:hidden">
+                    <button id="mobileMenuBtn" class="text-dark-400 hover:text-white focus:outline-none focus:text-white transition-colors">
+                        <i data-lucide="menu" class="w-6 h-6"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mobile Menu -->
+        <div id="mobileMenu" class="md:hidden overflow-hidden transition-all duration-300 ease-in-out max-h-0">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-dark-850 border-t border-dark-700">
+                <a href="/dashboard" class="flex items-center space-x-2 text-dark-300 hover:text-white hover:bg-dark-700 block px-3 py-2 rounded-md text-base font-medium transition-colors">
+                    <i data-lucide="gauge" class="w-4 h-4"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/dashboard/bot" class="flex items-center space-x-2 text-dark-300 hover:text-white hover:bg-dark-700 block px-3 py-2 rounded-md text-base font-medium transition-colors">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                    <span>Bot Control</span>
+                </a>
+                <a href="/dashboard/messages" class="flex items-center space-x-2 text-dark-300 hover:text-white hover:bg-dark-700 block px-3 py-2 rounded-md text-base font-medium transition-colors">
+                    <i data-lucide="message-circle" class="w-4 h-4"></i>
+                    <span>Messages</span>
+                </a>
+                <a href="/dashboard/statistics" class="flex items-center space-x-2 text-dark-300 hover:text-white hover:bg-dark-700 block px-3 py-2 rounded-md text-base font-medium transition-colors">
+                    <i data-lucide="trending-up" class="w-4 h-4"></i>
+                    <span>Statistics</span>
+                </a>
+                <a href="/dashboard/settings" class="flex items-center space-x-2 text-dark-300 hover:text-white hover:bg-dark-700 block px-3 py-2 rounded-md text-base font-medium transition-colors">
+                    <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                    <span>Settings</span>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div class="px-4 py-6 sm:px-0">
+            <%- body %>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            // Render icons pertama kali
+            lucide.createIcons();
+
+            // Mobile menu toggle
+            const btn = document.getElementById("mobileMenuBtn");
+            const menu = document.getElementById("mobileMenu");
+            const menuIcon = btn.querySelector('[data-lucide="menu"]');
+            let isOpen = false;
+
+            btn.addEventListener("click", () => {
+                if (!isOpen) {
+                    // Buka menu
+                    menu.style.maxHeight = menu.scrollHeight + "px";
+                    menuIcon.setAttribute('data-lucide', 'x');
+                    isOpen = true;
+                } else {
+                    // Tutup menu
+                    menu.style.maxHeight = "0";
+                    menuIcon.setAttribute('data-lucide', 'menu');
+                    isOpen = false;
+                }
+                
+                // Re-render icons setelah perubahan
+                lucide.createIcons();
+            });
+
+            // Tutup menu ketika window di-resize ke desktop size
+            window.addEventListener('resize', () => {
+                if (window.innerWidth >= 768) {
+                    menu.style.maxHeight = "0";
+                    menuIcon.setAttribute('data-lucide', 'menu');
+                    isOpen = false;
+                    lucide.createIcons();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

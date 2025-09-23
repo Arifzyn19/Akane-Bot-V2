@@ -83,7 +83,7 @@ async function loadPluginFiles(
             `error while requiring ${formattedFilename}`,
           ) ||
             console.error(
-              chalk.red(`  ✗ Error loading ${filename}:`, e.message),
+              chalk.red(`  ✗ Error loading ${formattedFilename}:`, e.message),
             );
           delete plugins[formattedFilename];
         }
